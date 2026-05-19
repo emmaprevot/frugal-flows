@@ -21,21 +21,36 @@ from jaxtyping import Array, Int
 
 
 class MaskedAutoregressiveFirstUniform(AbstractBijection):
-    """Masked autoregressive bijection.
+    """Masked autoregressive bijection that holds the first coordinate fixed.
 
-    The transformer is parameterised by a neural network, with weights masked to ensure
-    an autoregressive structure.
+    A MADE-masked MLP parameterises a per-dimension ``transformer``, giving the
+    usual autoregressive triangular Jacobian. This variant replaces the
+    transformer of coordinate 0 with the identity, so the first coordinate is
+    passed through unchanged: if the base distribution's first marginal is
+    uniform it stays uniform after the flow. That slot carries the causal
+    effect in the frugal parametrisation.
+
+    Conditioning variables can enter in two ways:
+        - ``cond_dim_nomask``: given input rank -1, so every output may depend
+          on them (standard conditional MAF).
+        - ``cond_dim_mask``: given input rank ``dim``, so they are masked from
+          all outputs (present but not used by the autoregressive net).
+    Both may be supplied together; the condition is then their concatenation.
 
     Refs:
         - https://arxiv.org/abs/1705.07057v4
-        - https://arxiv.org/abs/1705.07057v4
+        - https://arxiv.org/abs/1502.03509
 
     Args:
         key: Jax PRNGKey
         transformer: Bijection with shape () to be parameterised by the autoregressive
             network. Parameters wrapped with ``NonTrainable`` are exluded.
         dim: Dimension.
-        cond_dim: Dimension of any conditioning variables. Defaults to None.
+        cond_dim_nomask: Size of the unmasked conditioning block. Defaults to None.
+        cond_dim_mask: Size of the masked conditioning block. Defaults to None.
+        stop_grad_until: If set, gradients are stopped on the first
+            ``stop_grad_until`` transformer output params (used to freeze part
+            of the transformer during training). Defaults to None.
         nn_width: Neural network width.
         nn_depth: Neural network depth.
         nn_activation: Neural network activation. Defaults to jnn.relu.

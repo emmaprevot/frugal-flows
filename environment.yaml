@@ -18,8 +18,10 @@ dependencies:
   - rpy2 # =3.5
   - notebook
   - distrax
+  - pytest
   - seaborn
   - pip
+  - setuptools <81  # zepid 0.9.x imports pkg_resources, removed in setuptools 81+
   - scikit-learn
   - wandb
   - pip:

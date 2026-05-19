@@ -21,21 +21,31 @@ from jaxtyping import Array, Int
 
 
 class MaskedAutoregressiveHeterogeneous(AbstractBijection):
-    """Masked autoregressive bijection.
+    """Masked autoregressive bijection with an identity slot at ``identity_idx``.
 
-    The transformer is parameterised by a neural network, with weights masked to ensure
-    an autoregressive structure.
+    Like :class:`MaskedAutoregressiveFirstUniform`, but the coordinate held to
+    the identity is ``identity_idx`` rather than always 0. The transformer is
+    ``Concatenate([Vmap(transformer) over dims < identity_idx, Identity((1,)),
+    Vmap(transformer) over dims > identity_idx])``. Used for heterogeneous
+    treatment effects, where the causal slot need not be the first coordinate.
+
+    Conditioning follows the same two-block ``cond_dim_nomask`` / ``cond_dim_mask``
+    scheme as :class:`MaskedAutoregressiveFirstUniform`.
 
     Refs:
         - https://arxiv.org/abs/1705.07057v4
-        - https://arxiv.org/abs/1705.07057v4
+        - https://arxiv.org/abs/1502.03509
 
     Args:
         key: Jax PRNGKey
         transformer: Bijection with shape () to be parameterised by the autoregressive
             network. Parameters wrapped with ``NonTrainable`` are exluded.
         dim: Dimension.
-        cond_dim: Dimension of any conditioning variables. Defaults to None.
+        cond_dim_nomask: Size of the unmasked conditioning block. Defaults to None.
+        cond_dim_mask: Size of the masked conditioning block. Defaults to None.
+        identity_idx: Coordinate held to the identity. Defaults to 0.
+        stop_grad_until: If set, stops gradients on a slice of the transformer
+            output params. Defaults to None.
         nn_width: Neural network width.
         nn_depth: Neural network depth.
         nn_activation: Neural network activation. Defaults to jnn.relu.

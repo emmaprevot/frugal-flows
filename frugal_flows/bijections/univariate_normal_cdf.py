@@ -12,16 +12,48 @@ from jax.typing import ArrayLike
 
 
 class UnivariateNormalCDF(AbstractBijection):
-    """Elementwise affine transformation ``y = a*x + b``.
+    """Conditional Gaussian CDF — the "causal CDF" used for continuous outcomes.
 
-    ``loc`` and ``scale`` should broadcast to the desired shape of the bijection.
-    By default, we constrain the scale parameter to be postive using ``SoftPlus``, but
-    other parameterizations can be achieved by replacing the scale parameter after
-    construction e.g. using ``eqx.tree_at``.
+    Forward maps a real-valued causal latent to a uniform quantile via the
+    Gaussian CDF, with the treatment shifting the Gaussian's location:
+
+        loc = ate @ condition + const
+        forward:  y = Φ((x - loc) / scale)
+        inverse:  x = Φ⁻¹(y) * scale + loc
+
+    At sampling time the causal model uses ``inverse`` (see
+    ``sample_outcome.causal_cdf_outcome``): a uniform quantile ``y`` is mapped to
+    an outcome whose mean is shifted by ``ate @ condition`` — i.e. ``ate`` is the
+    average treatment effect, injected as the Gaussian location. As a flow layer
+    it occupies the causal-effect slot (see
+    ``causal_flows.train_frugal_flow_gaussian`` / ``_flexible_continuous``).
+
+    Log-determinants (both exact):
+        forward:  log|dy/dx| = log φ((x-loc)/scale) - log scale
+                              = ``norm.logpdf(x, loc, scale)``
+        inverse:  log|dx/dy| = log scale - log φ(Φ⁻¹(y))
+                              = ``-norm.logpdf(inverse_y, loc, scale)``
+
+    Warning:
+        ``scale`` is a trainable field but is **not** constrained positive (the
+        ``SoftPlus`` reparam is commented out in ``__init__``). If optimisation
+        drives ``scale`` ≤ 0, ``Φ``/``Φ⁻¹`` produce NaNs. Callers must keep it
+        positive.
+
+    Warning:
+        The constructor asserts ``cond_shape == ate.shape``. With
+        ``cond_dim=None`` this is ``None == ate.shape`` and **always fails**, so
+        the unconditional branches (``if self.cond_shape is None``) in
+        ``transform``/``inverse`` are currently unreachable. The no-confounder
+        path is therefore broken; only the conditional path works.
 
     Args:
-        loc: Location parameter. Defaults to 0.
-        scale: Scale parameter. Defaults to 1.
+        ate: Average treatment effect, shape ``(cond_dim,)``. Defaults to 0.
+            NOT coerced to an array — pass a JAX array (its ``.shape`` is read).
+        scale: Std-dev of the Gaussian. Defaults to 1. Must be > 0 (unenforced).
+        const: Baseline location (intercept). Defaults to 0.
+        cond_dim: Conditioning dimension; sets ``cond_shape = (cond_dim,)``.
+            Must equal ``ate.shape`` (see the second Warning).
     """
 
     shape: tuple[int, ...]

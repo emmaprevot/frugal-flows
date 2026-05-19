@@ -49,6 +49,17 @@ def univariate_marginal_flow(
     batch_size: int = 100,
     val_prop: float = 0.1,
 ):
+    """Fit a univariate marginal flow to one continuous covariate.
+
+    Builds a flowjax masked-autoregressive RQS flow on ``[-1, 1]`` (uniform
+    base), composes ``Invert(Tanh)`` for unbounded support, freezes the support
+    transform (``NonTrainable``), and trains it to ``z_cont`` with
+    ``fit_to_data``. ``z_cont`` must be shape ``(n,)`` or ``(n, 1)``.
+
+    Returns:
+        ``(flow, losses)`` — the trained ``Transformed`` distribution and the
+        training/validation loss history.
+    """
     if z_cont.ndim == 1:
         # Reshape one-dimensional array to two dimensions with second dim as 1
         z_cont = z_cont.reshape(-1, 1)
@@ -120,24 +131,24 @@ def masked_independent_flow(
     nn_activation: Callable = jnn.relu,
     invert: bool = True,
 ) -> Transformed:
-    """Masked autoregressive flow.
+    """Independent marginal flow for fitting per-coordinate marginals.
 
-    Parameterises a transformer bijection with an autoregressive neural network.
-    Refs: https://arxiv.org/abs/1606.04934; https://arxiv.org/abs/1705.07057v4.
+    Stacks ``flow_layers`` of :class:`MaskedIndependent` (each followed by the
+    default permutation). Each coordinate is transformed by its own elementwise
+    transformer, giving a product of independent per-coordinate marginal flows.
 
     Args:
         key: Random seed.
         base_dist: Base distribution, with ``base_dist.ndim==1``.
-        transformer: Bijection parameterised by autoregressive network. Defaults to
-            affine.
+        transformer: Bijection parameterised by the network. Defaults to a
+            positive-scale affine.
         cond_dim: Dimension of the conditioning variable. Defaults to None.
         flow_layers: Number of flow layers. Defaults to 8.
-        nn_width: Number of hidden layers in neural network. Defaults to 50.
-        nn_depth: Depth of neural network. Defaults to 1.
-        nn_activation: _description_. Defaults to jnn.relu.
-        invert: Whether to invert the bijection. Broadly, True will prioritise a faster
-            inverse, leading to faster `log_prob`, False will prioritise faster forward,
-            leading to faster `sample`. Defaults to True.
+        nn_width: Neural network width. Defaults to 50.
+        nn_depth: Neural network depth. Defaults to 1.
+        nn_activation: Neural network activation. Defaults to jnn.relu.
+        invert: Whether to invert the bijection (True → faster ``log_prob``,
+            False → faster ``sample``). Defaults to True.
     """
     if transformer is None:
         transformer = eqx.tree_at(
@@ -476,6 +487,14 @@ def masked_autoregressive_bijection_masked_condition(
     nn_width: int = 50,
     flow_layers: int = 4,
 ):
+    """Build a masked-autoregressive bijection with fully-masked conditioning.
+
+    Stacks ``flow_layers`` of :class:`MaskedAutoregressiveMaskedCond` with an
+    RQS transformer; the conditioning enters the masked block
+    (``cond_dim_mask=condition.shape[1]``). Returns the ``Invert(Scan(...))``
+    bijection for the caller to pair with a base distribution. Used by
+    ``causal_flows`` for the location-translation ATE path.
+    """
     invert = True
     transformer = RationalQuadraticSpline(knots=RQS_knots, interval=1)
 

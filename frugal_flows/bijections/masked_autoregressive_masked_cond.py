@@ -17,21 +17,26 @@ from jax import Array
 
 
 class MaskedAutoregressiveMaskedCond(AbstractBijection):
-    """Masked autoregressive bijection.
+    """Standard masked autoregressive bijection with a two-block condition.
 
-    The transformer is parameterised by a neural network, with weights masked to ensure
-    an autoregressive structure.
+    A MADE-masked MLP (flowjax's ``masked_autoregressive_mlp``) parameterises an
+    unconditional per-dimension ``transformer``; no identity slot. Conditioning
+    is split into an unmasked block (``cond_dim_nomask``, input rank -1: visible
+    to all outputs) and a masked block (``cond_dim_mask``, input rank ``dim``:
+    masked from all outputs). The condition passed at call time is the
+    concatenation of the two blocks in that order.
 
     Refs:
         - https://arxiv.org/abs/1705.07057v4
-        - https://arxiv.org/abs/1705.07057v4
+        - https://arxiv.org/abs/1502.03509
 
     Args:
         key: Jax PRNGKey
         transformer: Bijection with shape () to be parameterised by the autoregressive
             network. Parameters wrapped with ``NonTrainable`` are exluded.
         dim: Dimension.
-        cond_dim: Dimension of any conditioning variables. Defaults to None.
+        cond_dim_nomask: Size of the unmasked conditioning block. Defaults to None.
+        cond_dim_mask: Size of the masked conditioning block. Defaults to None.
         nn_width: Neural network width.
         nn_depth: Neural network depth.
         nn_activation: Neural network activation. Defaults to jnn.relu.

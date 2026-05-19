@@ -15,14 +15,17 @@ from jax import Array
 
 
 class MaskedAutoregressiveTransformerCond(AbstractBijection):
-    """Masked autoregressive bijection.
+    """Masked autoregressive bijection with a conditional transformer.
 
-    The transformer is parameterised by a neural network, with weights masked to ensure
-    an autoregressive structure.
+    A MADE-masked MLP parameterises the per-dimension ``transformer``, and the
+    same ``condition`` is also forwarded into the transformer itself
+    (``transformer.transform(x, condition=condition)``) — so the elementwise
+    transformer may depend on the condition directly, not only via the MLP.
+    No identity slot.
 
     Refs:
         - https://arxiv.org/abs/1705.07057v4
-        - https://arxiv.org/abs/1705.07057v4
+        - https://arxiv.org/abs/1502.03509
 
     Args:
         key: Jax PRNGKey

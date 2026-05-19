@@ -12,7 +12,35 @@ from jaxtyping import Array
 
 
 class RationalQuadraticSplineCond(AbstractBijection):
-    """Scalar RationalQuadraticSpline transformation (https://arxiv.org/abs/1906.04032).
+    """Scalar rational-quadratic spline + optional conditional location shift.
+
+    The spline itself is the standard RQS of Durkan et al. 2019
+    (https://arxiv.org/abs/1906.04032), eqs. 4–5, with linear (identity) tails
+    outside ``[-interval, interval]``. On top of the spline this variant adds a
+    condition-driven shift:
+
+        forward:  y = RQS(x) + ate * condition[0]
+        inverse:  x = RQS⁻¹(y - ate * condition[0])
+
+    When ``condition is None`` (the default call from flowjax, since
+    ``cond_shape`` is a ``ClassVar = None``) the shift term is dropped and this
+    is plain RQS. The conditioning is therefore "soft": it only applies if a
+    caller explicitly forwards a ``condition``.
+
+    Note:
+        Not used anywhere inside ``frugal_flows`` — the flows use flowjax's own
+        ``RationalQuadraticSpline`` as the MAF transformer. Kept for the
+        notebooks / completeness.
+
+    Warning:
+        ``inverse_and_log_det`` is **incorrect when ``ate * condition[0] != 0``**.
+        It calls ``self.derivative(x, condition=condition)`` on the recovered
+        preimage ``x`` (already in RQS input-domain), but ``derivative`` then
+        re-subtracts ``ate * condition[0]`` and evaluates RQS′ at the wrong
+        point. ``transform_and_log_det`` is correct (it passes
+        ``condition=None`` to ``derivative``, and the ``ate`` term has zero
+        ``dy/dx``). Correct whenever ``ate == 0`` (the default) or
+        ``condition is None``.
 
     Args:
         knots: Number of knots.
@@ -22,6 +50,9 @@ class RationalQuadraticSplineCond(AbstractBijection):
             output, e.g. 0=no adjustment, 1=average softmax output with evenly spaced
             widths, >1 promotes more evenly spaced widths. See
             ``real_to_increasing_on_interval``. Defaults to 1e-2.
+        ate: Average treatment effect; per-unit shift applied as
+            ``ate * condition[0]`` (only when a ``condition`` is supplied).
+            Defaults to 0.0.
     """
 
     knots: int

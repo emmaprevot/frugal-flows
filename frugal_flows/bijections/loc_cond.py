@@ -10,16 +10,35 @@ from jax.typing import ArrayLike
 
 
 class LocCond(AbstractBijection):
-    """Elementwise affine transformation ``y = a*x + b``.
+    """Condition-driven location shift ``y = x + ate * condition[0]``.
 
-    ``loc`` and ``scale`` should broadcast to the desired shape of the bijection.
-    By default, we constrain the scale parameter to be postive using ``SoftPlus``, but
-    other parameterizations can be achieved by replacing the scale parameter after
-    construction e.g. using ``eqx.tree_at``.
+    This is the bijection that injects the causal effect into the frugal flow as
+    an explicit, trainable parameter. It applies a pure translation of ``x`` by
+    ``ate * condition[0]``; there is no scale term, so the Jacobian is the
+    identity and ``log|det J| = 0`` (volume-preserving) in both directions.
+
+    Only the **first** component of ``condition`` is used (``condition[0]``) — in
+    the frugal-flows pipeline this is the binary treatment ``X``, so the shift is
+    ``ate * X``. Any further conditioning components are ignored. ``ate`` is the
+    average treatment effect; it is a trainable array field, optimised when this
+    bijection is part of a flow (see ``causal_flows.train_frugal_flow_location_translation``)
+    and supplied directly at sampling time (see ``sample_outcome.location_translation_outcome``).
+
+    Forward:  ``y = x + ate * condition[0]``
+    Inverse:  ``x = y - ate * condition[0]``
+
+    Note:
+        ``transform``/``inverse`` index ``condition[0]`` unconditionally, so a
+        ``condition`` argument is always required even though the signature
+        defaults it to ``None`` (the default exists only for interface
+        compatibility with ``flowjax.AbstractBijection``).
 
     Args:
-        loc: Location parameter. Defaults to 0.
-        scale: Scale parameter. Defaults to 1.
+        ate: Average treatment effect — the per-unit shift applied per unit of
+            ``condition[0]``. Defaults to 0. Its shape sets the bijection
+            ``shape``.
+        cond_dim: If given, sets ``cond_shape = (cond_dim,)``; otherwise
+            ``cond_shape`` is ``None``.
     """
 
     shape: tuple[int, ...]
