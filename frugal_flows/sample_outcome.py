@@ -252,6 +252,26 @@ def causal_cdf_outcome(
     causal_condition: ArrayLike,
     **treatment_kwargs: dict,
 ):
+    """Sample continuous outcomes via the inverse causal CDF.
+
+    Constructs ``causal_cdf`` (default :class:`UnivariateNormalCDF`) from
+    ``treatment_kwargs`` and maps the uniform quantiles ``u_y`` to outcomes with
+    ``causal_cdf.inverse``, conditioned on ``causal_condition``. ``cond_dim`` is
+    inferred from ``causal_condition`` if not supplied; missing constructor
+    params default to ``None`` with a warning. Requires a non-None
+    ``causal_condition``.
+
+    Args:
+        u_y: Uniform quantiles, shape (n_samples,).
+        causal_cdf: Causal-CDF bijection class, used via ``.inverse``.
+        causal_condition: Conditioning values, shape (n_samples,) or
+            (n_samples, 1).
+        **treatment_kwargs: Constructor args for ``causal_cdf`` (e.g. ``ate``,
+            ``scale``, ``const``).
+
+    Returns:
+        ``(outcome_samples, causal_cdf_instance)``.
+    """
     if causal_condition is not None:
         if causal_condition.ndim == 1:
             # Reshape one-dimensional array to two dimensions with second dim as 1

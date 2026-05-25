@@ -32,6 +32,26 @@ def train_quantile_propensity_score(
     batch_size: int = 100,
     return_x_quantiles: bool = False,
 ):
+    """Fit the quantile propensity-score flow ``U_X | Z``.
+
+    The discrete treatment ``x`` is mapped to quantiles ``u_x`` via the
+    empirical-CDF distributional transform (``univariate_discrete_cdf``), then a
+    conditional masked-autoregressive RQS flow is trained to model those
+    quantiles given the confounders ``condition`` (``Z``). The flow's support is
+    mapped to ``[0, 1]`` and the support-mapping affines are frozen
+    (``NonTrainable``); only the MAF is trained.
+
+    Args:
+        key: PRNG key.
+        x: Discrete treatment, integer dtype (required by
+            ``univariate_discrete_cdf``), shape ``(n,)`` or ``(n, 1)``.
+        condition: Confounders ``Z`` of shape ``(n, n_confounders)``.
+        return_x_quantiles: If True, also return the computed ``u_x``.
+
+    Returns:
+        ``(flow, losses)``, or ``(flow, losses, u_x)`` if
+        ``return_x_quantiles`` is True.
+    """
     nvars = condition.shape[1]
 
     key, subkey = jr.split(key)

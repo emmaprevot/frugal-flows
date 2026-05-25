@@ -28,6 +28,23 @@ hyperparam_dict = {
 }
 
 class FrugalFlowModel:
+    """End-to-end frugal-flow benchmarking pipeline.
+
+    Orchestrates the full workflow: fit stage-1 marginal CDFs
+    (``train_marginal_cdfs``), train the frugal flow with an explicit causal
+    parameter (``train_frugal_flow``), fit the quantile propensity score
+    (``train_propensity_flow``), then draw a synthetic ``(Y, X, Z)`` dataset
+    from a confounding copula (``generate_samples``). ``X`` is assumed binary.
+
+    Args:
+        Y: Outcome, shape (n, 1).
+        X: Binary treatment, shape (n, 1).
+        Z_disc: Discrete confounders, shape (n, n_disc), or None.
+        Z_cont: Continuous confounders, shape (n, n_cont), or None.
+        confounding_copula: Callable ``(key, N, rho) -> (u_yx, u_xz)``;
+            defaults to a bivariate Gaussian copula.
+    """
+
     def __init__(self, Y, X, Z_disc=None, Z_cont=None, confounding_copula=None):
         self.Y = Y
         self.X = X

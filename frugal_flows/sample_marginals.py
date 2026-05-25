@@ -158,7 +158,7 @@ def univariate_from_quantiles_to_marginal_discr(
 
     Args:
         cdf_levels (Array): The cumulative distribution function (CDF) levels.
-        key_mapping (Array): A mapping array of length (n_categories - 1 ) where the entries correspond to the variable categories. The order of the categories should match that in CDF_levels.
+        key_mapping (Array): A mapping array of length n_categories whose entries are the variable's category labels, ordered to match cdf_levels (entry i is the label for the i-th CDF level).
         uni_standard: The univariate random variable in standard uniform distribution.
 
     Returns:
