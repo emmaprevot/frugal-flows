@@ -11,36 +11,31 @@ from flowjax.bijections.rational_quadratic_spline import _real_to_increasing_on_
 from jaxtyping import Array
 
 
-class RationalQuadraticSplineCond(AbstractBijection):
-    """Scalar rational-quadratic spline + optional conditional location shift.
+class RationalQuadraticSplineAdditiveCond(AbstractBijection):
+    """Scalar rational-quadratic spline with an additive conditional shift.
 
     The spline itself is the standard RQS of Durkan et al. 2019
     (https://arxiv.org/abs/1906.04032), eqs. 4–5, with linear (identity) tails
     outside ``[-interval, interval]``. On top of the spline this variant adds a
-    condition-driven shift:
+    condition-driven location shift:
 
         forward:  y = RQS(x) + ate * condition[0]
         inverse:  x = RQS⁻¹(y - ate * condition[0])
 
+    The "Additive" in the class name is load-bearing: the condition term is a
+    constant offset in ``y``, so ``dy/dx = RQS'(x)`` — the Jacobian depends
+    only on the spline, not on the condition. The log-det implementations rely
+    on this invariant.
+
     When ``condition is None`` (the default call from flowjax, since
-    ``cond_shape`` is a ``ClassVar = None``) the shift term is dropped and this
-    is plain RQS. The conditioning is therefore "soft": it only applies if a
-    caller explicitly forwards a ``condition``.
+    ``cond_shape`` is a ``ClassVar = None``) the shift term is dropped and
+    this is plain RQS. Conditioning is therefore "soft": it only applies when
+    a caller explicitly forwards a ``condition``.
 
     Note:
         Not used anywhere inside ``frugal_flows`` — the flows use flowjax's own
         ``RationalQuadraticSpline`` as the MAF transformer. Kept for the
         notebooks / completeness.
-
-    Warning:
-        ``inverse_and_log_det`` is **incorrect when ``ate * condition[0] != 0``**.
-        It calls ``self.derivative(x, condition=condition)`` on the recovered
-        preimage ``x`` (already in RQS input-domain), but ``derivative`` then
-        re-subtracts ``ate * condition[0]`` and evaluates RQS′ at the wrong
-        point. ``transform_and_log_det`` is correct (it passes
-        ``condition=None`` to ``derivative``, and the ``ate`` term has zero
-        ``dy/dx``). Correct whenever ``ate == 0`` (the default) or
-        ``condition is None``.
 
     Args:
         knots: Number of knots.
@@ -117,7 +112,7 @@ class RationalQuadraticSplineCond(AbstractBijection):
 
     def transform_and_log_det(self, x, condition=None):
         y = self.transform(x, condition=condition)
-        derivative = self.derivative(x, condition=None)
+        derivative = self.derivative(x)
         return y, jnp.log(derivative).sum()
 
     def inverse(self, y, condition=None):
@@ -146,14 +141,18 @@ class RationalQuadraticSplineCond(AbstractBijection):
 
     def inverse_and_log_det(self, y, condition=None):
         x = self.inverse(y, condition=condition)
-        derivative = self.derivative(x, condition=condition)
+        derivative = self.derivative(x)
         return x, -jnp.log(derivative).sum()
 
-    def derivative(self, x, condition=None) -> Array:
-        """The derivative dy/dx of the forward transformation."""
+    def derivative(self, x) -> Array:
+        """RQS'(x) at the actual spline input.
+
+        The forward is ``y = RQS(x) + ate * condition[0]``: the condition term
+        is additive in ``y``, so ``dy/dx = RQS'(x)`` and does not depend on the
+        condition. Both log-det methods therefore evaluate ``derivative`` at
+        the RQS-input-domain point and pass no condition.
+        """
         # Following notation from the paper (eq. 5)
-        if condition is not None:
-            x = x - self.ate * condition[0]
         x_pos, y_pos, derivatives = self.x_pos, self.y_pos, self.derivatives
         in_bounds = jnp.logical_and(x >= -self.interval, x <= self.interval)
         x_robust = jnp.where(in_bounds, x, 0)  # To avoid nans

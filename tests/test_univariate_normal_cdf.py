@@ -2,7 +2,8 @@
 
 Contract (see the class docstring):
 
-    loc = ate @ condition + const
+    loc = ate @ condition + const   (when cond_dim is not None)
+    loc = const                     (when cond_dim is None)
     forward:  y = Φ((x - loc) / scale)
     inverse:  x = Φ⁻¹(y) * scale + loc
     forward log|det J| = log φ((x-loc)/scale) - log scale
@@ -10,7 +11,7 @@ Contract (see the class docstring):
 
 We verify forward == Φ and inverse == Φ⁻¹ on a grid, exact round-trips, the
 log-dets against autodiff (the gold standard), the ATE-injection semantics, and
-pin the currently-broken ``cond_dim=None`` path as a regression marker.
+the unconditional ``cond_dim=None`` path.
 """
 
 from __future__ import annotations
@@ -130,11 +131,46 @@ def test_ate_injection_shifts_outcome_location():
     assert jnp.allclose(x_treated - x_control, ate, rtol=0, atol=1e-9)
 
 
-def test_cond_dim_none_path_is_currently_broken():
-    """Pins current behaviour (a known defect, not desired): the constructor
-    asserts `cond_shape == ate.shape`, so `cond_dim=None` (-> cond_shape None)
-    can never be constructed and the unconditional code paths are unreachable.
-    If the unconditional path is ever fixed, update this test deliberately.
+def test_cond_dim_none_is_unconditional_gaussian_cdf():
+    """With ``cond_dim=None`` the bijection is an unconditional Gaussian CDF:
+    ``forward(x) = Φ((x - const) / scale)`` — the location is just ``const``,
+    independent of any condition. Round-trip and the autodiff log-det must also
+    agree under the conditional contract.
     """
-    with pytest.raises((AssertionError, AttributeError)):
-        UnivariateNormalCDF(ate=jnp.array([0.5]), scale=1.0, const=0.0, cond_dim=None)
+    scale, const = 1.4, -0.3
+    bij = UnivariateNormalCDF(scale=scale, const=const, cond_dim=None)
+    assert bij.cond_shape is None
+
+    xs = jnp.linspace(-6.0, 6.0, 201)
+    got = jax.vmap(lambda x: bij.transform(x))(xs)
+    expected = jax.scipy.stats.norm.cdf(xs, loc=const, scale=scale)
+    assert jnp.allclose(got.squeeze(), expected, rtol=0, atol=1e-10)
+
+    rt = jax.vmap(lambda x: bij.inverse(bij.transform(x)))(xs)
+    assert jnp.allclose(rt.squeeze(), xs, rtol=0, atol=1e-8)
+
+    x = jnp.array(0.7)
+    _, log_det = bij.transform_and_log_det(x)
+    dydx = jax.grad(lambda x_: bij.transform(x_).squeeze())(x)
+    assert log_det.squeeze() == pytest.approx(
+        float(jnp.log(jnp.abs(dydx))), rel=0, abs=1e-9
+    )
+
+
+def test_default_construction_does_not_crash():
+    """``UnivariateNormalCDF()`` with all defaults (Python-scalar ``ate=0``)
+    must construct without crashing — the constructor coerces ``ate`` to a JAX
+    array. Regression test for the lost ``arraylike_to_array`` coercion in
+    commit ``602c8b4``.
+    """
+    bij = UnivariateNormalCDF()
+    assert bij.cond_shape is None
+    assert bij.ate.shape == ()
+
+
+def test_assertion_still_catches_real_shape_mismatch():
+    """The protective assertion must still fire when ``cond_dim`` is supplied
+    and ``ate.shape`` disagrees — this is a real user error.
+    """
+    with pytest.raises(AssertionError):
+        UnivariateNormalCDF(ate=jnp.array([1.0]), cond_dim=2)

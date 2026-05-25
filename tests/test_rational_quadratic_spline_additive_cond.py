@@ -1,19 +1,18 @@
-"""Math-grounded tests for ``RationalQuadraticSplineCond``.
+"""Math-grounded tests for ``RationalQuadraticSplineAdditiveCond``.
 
 Contract:
 
     forward:  y = RQS(x) + ate * condition[0]   (identity tails, ate term
                                                    dropped when condition is None)
     inverse:  x = RQS⁻¹(y - ate * condition[0])
-    forward log|det J| = log RQS'(x)             (ate term has zero dy/dx)
+    forward log|det J| = log RQS'(x)             (ate term has zero dy/dx —
+                                                   "Additive" in the class
+                                                   name is load-bearing)
+    inverse log|det J| = -log RQS'(x)            (x is the RQS-input preimage)
 
 NOTE: an untrained spline initialises to the identity (all derivatives = 1),
 so a non-identity spline is required to exercise the derivative-dependent
 paths. ``_spline`` perturbs the trainable params so RQS' is non-constant.
-
-``transform``/``inverse``/``transform_and_log_det`` are correct. The known
-defect is ``inverse_and_log_det`` when ``ate * condition[0] != 0`` — pinned
-below with strict ``xfail`` so the suite stays green and the bug stays visible.
 """
 
 from __future__ import annotations
@@ -25,12 +24,12 @@ import jax.random as jr
 import pytest
 from flowjax.wrappers import unwrap
 
-from frugal_flows.bijections import RationalQuadraticSplineCond
+from frugal_flows.bijections import RationalQuadraticSplineAdditiveCond
 
 
 def _spline(ate=0.0, *, perturb=True, seed=1):
     """Non-identity RQS: perturb every trainable param, then unwrap."""
-    bij = RationalQuadraticSplineCond(knots=8, interval=4.0, ate=ate)
+    bij = RationalQuadraticSplineAdditiveCond(knots=8, interval=4.0, ate=ate)
     if perturb:
         params, static = eqx.partition(bij, eqx.is_inexact_array)
         flat, treedef = jax.tree_util.tree_flatten(params)
@@ -94,19 +93,26 @@ def test_inverse_log_det_correct_when_ate_zero(key):
     assert ld_inv == pytest.approx(float(jnp.log(jnp.abs(dxdy))), rel=0, abs=1e-5)
 
 
-@pytest.mark.xfail(
-    reason="Known bug: inverse_and_log_det calls derivative(x, condition=condition) "
-    "on the recovered preimage, which re-subtracts ate*condition[0] and evaluates "
-    "RQS' at the wrong point when ate*condition[0] != 0. Flag-don't-fix in Phase 1.",
-    strict=True,
-)
 def test_inverse_log_det_correct_with_nonzero_ate(key):
-    """Ground truth = autodiff of inverse. inverse_and_log_det's log-det should
-    equal log|d inverse/dy| even with a nonzero conditional shift. Currently
-    wrong (xfail)."""
+    """Ground truth = autodiff of inverse. With the bug-2 fix,
+    ``inverse_and_log_det`` evaluates ``RQS'`` at the recovered RQS-input
+    preimage (not at the wrongly-double-shifted point), so its log-det matches
+    ``log|d inverse/dy|`` even when ``ate * condition[0] != 0``.
+    """
     bij = _spline(ate=0.8)
     c = jnp.array([1.0])
     y = jr.uniform(key, (), minval=-3.0, maxval=3.0)
     _, ld_inv = bij.inverse_and_log_det(y, c)
     dxdy = jax.grad(lambda y_: bij.inverse(y_, c))(y)
     assert ld_inv == pytest.approx(float(jnp.log(jnp.abs(dxdy))), rel=0, abs=1e-5)
+
+
+def test_inverse_log_det_matches_negative_forward_log_det(key):
+    """Inverse-function theorem: at ``x = inverse(y, c)``,
+    ``ld_inv(y, c) == -ld_fwd(x, c)``. Independent check of the bug-2 fix."""
+    bij = _spline(ate=0.8)
+    c = jnp.array([1.0])
+    y = jr.uniform(key, (), minval=-3.0, maxval=3.0)
+    x, ld_inv = bij.inverse_and_log_det(y, c)
+    _, ld_fwd = bij.transform_and_log_det(x, c)
+    assert ld_inv == pytest.approx(float(-ld_fwd), rel=0, abs=1e-5)

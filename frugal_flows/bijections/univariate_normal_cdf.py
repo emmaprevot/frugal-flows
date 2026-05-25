@@ -40,20 +40,15 @@ class UnivariateNormalCDF(AbstractBijection):
         drives ``scale`` ≤ 0, ``Φ``/``Φ⁻¹`` produce NaNs. Callers must keep it
         positive.
 
-    Warning:
-        The constructor asserts ``cond_shape == ate.shape``. With
-        ``cond_dim=None`` this is ``None == ate.shape`` and **always fails**, so
-        the unconditional branches (``if self.cond_shape is None``) in
-        ``transform``/``inverse`` are currently unreachable. The no-confounder
-        path is therefore broken; only the conditional path works.
-
     Args:
-        ate: Average treatment effect, shape ``(cond_dim,)``. Defaults to 0.
-            NOT coerced to an array — pass a JAX array (its ``.shape`` is read).
+        ate: Average treatment effect, shape ``(cond_dim,)`` when a condition is
+            supplied. Defaults to 0. Coerced to a JAX array.
         scale: Std-dev of the Gaussian. Defaults to 1. Must be > 0 (unenforced).
         const: Baseline location (intercept). Defaults to 0.
-        cond_dim: Conditioning dimension; sets ``cond_shape = (cond_dim,)``.
-            Must equal ``ate.shape`` (see the second Warning).
+        cond_dim: Conditioning dimension; sets ``cond_shape = (cond_dim,)``. If
+            ``None``, the bijection is unconditional and the location reduces to
+            ``const``. When not ``None``, ``ate.shape`` must equal
+            ``(cond_dim,)`` (asserted in ``__init__``).
     """
 
     shape: tuple[int, ...]
@@ -70,7 +65,7 @@ class UnivariateNormalCDF(AbstractBijection):
         const: ArrayLike = 0,
         cond_dim: ArrayLike = None,
     ):
-        self.ate = ate
+        self.ate = arraylike_to_array(ate, dtype=float)
         scale, self.const = jnp.broadcast_arrays(
             *(arraylike_to_array(a, dtype=float) for a in (scale, const)),
         )
@@ -80,9 +75,9 @@ class UnivariateNormalCDF(AbstractBijection):
             self.cond_shape = None
         else:
             self.cond_shape = (cond_dim,)
-        assert (
-            self.cond_shape == self.ate.shape
-        ), "ate and condition must have the same shape"
+            assert (
+                self.cond_shape == self.ate.shape
+            ), "ate and condition must have the same shape"
 
     def transform(self, x, condition=None):
         if self.cond_shape is None:
