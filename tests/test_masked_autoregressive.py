@@ -7,8 +7,7 @@ Covers:
   the MLP-output row for the identity slot has zero gradient by construction
   (no explicit stop_gradient needed).
 - MaskedAutoregressiveMaskedCond: standard MAF round-trip + log-det.
-- MaskedAutoregressiveTransformerCond: round-trip + log-det; the dead
-  ``ate()`` method is pinned.
+- MaskedAutoregressiveTransformerCond: round-trip + log-det.
 
 A concrete unconditional ``Affine`` transformer is used throughout (its
 ``transform`` accepts and ignores ``condition``).
@@ -144,11 +143,3 @@ def test_transformer_cond_round_trip_and_log_det(key):
     )
 
 
-def test_transformer_cond_ate_method_is_dead(key):
-    """Pins current behaviour: `ate()` references `self.my_transformer`, which
-    does not exist -> AttributeError. The method is vestigial."""
-    bij = MaskedAutoregressiveTransformerCond(
-        key, transformer=Affine(), dim=3, cond_dim=2, **NN
-    )
-    with pytest.raises(AttributeError):
-        bij.ate()

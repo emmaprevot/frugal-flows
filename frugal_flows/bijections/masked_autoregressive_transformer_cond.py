@@ -83,10 +83,6 @@ class MaskedAutoregressiveTransformerCond(AbstractBijection):
 
         self.transformer_constructor = constructor
         self.shape = (dim,)
-        self.cond_shape = None if cond_dim is None else (cond_dim,)
-
-    def ate(self):
-        return self.my_transformer.ate
 
     def transform(self, x, condition=None):
         nn_input = x if condition is None else jnp.hstack((x, condition))
