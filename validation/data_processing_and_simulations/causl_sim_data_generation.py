@@ -106,9 +106,9 @@ def generate_uz_samples(Z_disc=None, Z_cont=None, use_marginal_flow=False, seed=
            z_discr=Z_disc
         )
         uz_disc_samples = disc_marg_flow['u_z_discr']
-    if uz_disc_samples == None:
+    if uz_disc_samples is None:
         uz_samples = uz_cont_samples
-    elif uz_cont_samples == None:
+    elif uz_cont_samples is None:
         uz_samples = uz_disc_samples
     else:
         uz_samples = jnp.hstack([uz_disc_samples, uz_cont_samples])
