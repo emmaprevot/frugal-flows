@@ -18,7 +18,6 @@ from flowjax.bijections.utils import Identity
 from flowjax.distributions import Transformed, Uniform, _StandardUniform
 from flowjax.flows import masked_autoregressive_flow
 from flowjax.train import fit_to_data
-from flowjax.utils import get_ravelled_pytree_constructor
 from flowjax.wrappers import NonTrainable
 from jaxtyping import ArrayLike
 
@@ -117,7 +116,6 @@ def train_frugal_flow_location_translation(
     batch_size: int = 100,
     condition: ArrayLike | None = None,
     mask_condition: bool = True,
-    stop_grad_until_active: bool = False,
     causal_model_args: dict | None = None,
 ):
     nvars = u_z.shape[1]
@@ -163,10 +161,6 @@ def train_frugal_flow_location_translation(
     base_dist = Uniform(-jnp.ones(nvars + 1), jnp.ones(nvars + 1))
 
     transformer = RationalQuadraticSpline(knots=RQS_knots, interval=1)
-    if stop_grad_until_active:
-        _, stop_grad_until = get_ravelled_pytree_constructor(transformer)
-    else:
-        stop_grad_until = None
 
     key, subkey = jr.split(key)
     frugal_flow = masked_autoregressive_flow_first_uniform(
@@ -179,7 +173,6 @@ def train_frugal_flow_location_translation(
         nn_depth=nn_depth,
         nn_width=nn_width,
         flow_layers=flow_layers,
-        stop_grad_until=stop_grad_until,
     )  # Support on [-1, 1]
 
     frugal_flow = Transformed(
@@ -249,7 +242,6 @@ def train_frugal_flow_flexible_continuous(
     batch_size: int = 100,
     condition: ArrayLike | None = None,
     mask_condition: bool = True,
-    stop_grad_until_active: bool = False,
     causal_model_args: dict | None = None,
 ):
     nvars = u_z.shape[1]
@@ -291,10 +283,6 @@ def train_frugal_flow_flexible_continuous(
     base_dist = Uniform(-jnp.ones(nvars + 1), jnp.ones(nvars + 1))
 
     transformer = RationalQuadraticSpline(knots=RQS_knots, interval=1)
-    if stop_grad_until_active:
-        _, stop_grad_until = get_ravelled_pytree_constructor(transformer)
-    else:
-        stop_grad_until = None
 
     key, subkey = jr.split(key)
     frugal_flow = masked_autoregressive_flow_first_uniform(
@@ -307,7 +295,6 @@ def train_frugal_flow_flexible_continuous(
         nn_depth=nn_depth,
         nn_width=nn_width,
         flow_layers=flow_layers,
-        stop_grad_until=stop_grad_until,
     )  # Support on [-1, 1]
 
     frugal_flow = Transformed(
@@ -374,7 +361,6 @@ def train_frugal_flow_flexible_discrete(
     batch_size: int = 100,
     condition: ArrayLike | None = None,
     mask_condition: bool = True,
-    stop_grad_until_active: bool = False,
     causal_model_args: dict | None = None,
 ):
     nvars = u_z.shape[1]
@@ -423,10 +409,6 @@ def train_frugal_flow_flexible_discrete(
     base_dist = Uniform(-jnp.ones(nvars + 1), jnp.ones(nvars + 1))
 
     transformer = RationalQuadraticSpline(knots=RQS_knots, interval=1)
-    if stop_grad_until_active:
-        _, stop_grad_until = get_ravelled_pytree_constructor(transformer)
-    else:
-        stop_grad_until = None
 
     key, subkey = jr.split(key)
     frugal_flow = masked_autoregressive_flow_first_uniform(
@@ -439,7 +421,6 @@ def train_frugal_flow_flexible_discrete(
         nn_depth=nn_depth,
         nn_width=nn_width,
         flow_layers=flow_layers,
-        stop_grad_until=stop_grad_until,
     )  # Support on [-1, 1]
 
     frugal_flow = Transformed(
@@ -513,7 +494,6 @@ def train_frugal_flow_gaussian(
     batch_size: int = 100,
     condition: ArrayLike | None = None,
     mask_condition: bool = True,
-    stop_grad_until_active: bool = False,
     causal_model_args: dict | None = None,
     causal_effect_idx: int = 0,
 ):
@@ -557,10 +537,6 @@ def train_frugal_flow_gaussian(
     base_dist = Uniform(-jnp.ones(nvars), jnp.ones(nvars))
 
     transformer = RationalQuadraticSpline(knots=RQS_knots, interval=1)
-    if stop_grad_until_active:
-        _, stop_grad_until = get_ravelled_pytree_constructor(transformer)
-    else:
-        stop_grad_until = None
 
     key, subkey = jr.split(key)
     frugal_flow = masked_autoregressive_flow_heterogeneous(
@@ -573,7 +549,6 @@ def train_frugal_flow_gaussian(
         nn_depth=nn_depth,
         nn_width=nn_width,
         flow_layers=flow_layers,
-        stop_grad_until=stop_grad_until,
         causal_effect_idx=causal_effect_idx,
     )  # Support on [-1, 1]
 
@@ -635,7 +610,6 @@ def train_frugal_flow(
     batch_size: int = 100,
     condition: ArrayLike | None = None,
     mask_condition: bool = True,
-    stop_grad_until_active: bool = False,
     causal_model="gaussian",
     causal_model_args: dict | None = None,
 ):
@@ -674,7 +648,6 @@ def train_frugal_flow(
             batch_size=batch_size,
             condition=condition,
             mask_condition=mask_condition,
-            stop_grad_until_active=stop_grad_until_active,
             causal_model_args=causal_model_args,
             causal_effect_idx=causal_effect_idx,
         )
@@ -696,7 +669,6 @@ def train_frugal_flow(
             batch_size=batch_size,
             condition=condition,
             mask_condition=mask_condition,
-            stop_grad_until_active=stop_grad_until_active,
             causal_model_args=causal_model_args,
         )
 
@@ -717,7 +689,6 @@ def train_frugal_flow(
             batch_size=batch_size,
             condition=condition,
             mask_condition=mask_condition,
-            stop_grad_until_active=stop_grad_until_active,
             causal_model_args=causal_model_args,
         )
 
@@ -738,7 +709,6 @@ def train_frugal_flow(
             batch_size=batch_size,
             condition=condition,
             mask_condition=mask_condition,
-            stop_grad_until_active=stop_grad_until_active,
             causal_model_args=causal_model_args,
         )
 

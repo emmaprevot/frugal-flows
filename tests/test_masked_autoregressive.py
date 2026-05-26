@@ -4,7 +4,8 @@ Covers:
 - MaskedAutoregressiveFirstUniform: the first-coordinate-identity (uniform)
   invariant, round-trip, log-det vs autodiff.
 - MaskedAutoregressiveHeterogeneous: identity slot at ``identity_idx``;
-  the ``stop_grad_until`` path is currently broken (pinned).
+  the MLP-output row for the identity slot has zero gradient by construction
+  (no explicit stop_gradient needed).
 - MaskedAutoregressiveMaskedCond: standard MAF round-trip + log-det.
 - MaskedAutoregressiveTransformerCond: round-trip + log-det; the dead
   ``ate()`` method is pinned.
@@ -15,6 +16,7 @@ A concrete unconditional ``Affine`` transformer is used throughout (its
 
 from __future__ import annotations
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
@@ -77,19 +79,33 @@ def test_heterogeneous_identity_slot_position(key, idx):
     assert jnp.allclose(bij.inverse(y), x, rtol=0, atol=1e-5)
 
 
-def test_heterogeneous_stop_grad_path_is_currently_broken(key):
-    """Pins current behaviour (a defect): transform() calls the MLP without
-    passing identity_idx, so when stop_grad_until is set the MLP does
-    `stop_grad_until * identity_idx` with identity_idx=None -> TypeError.
+def test_heterogeneous_identity_slot_mlp_row_is_unused(key):
+    """The MLP output row producing identity-slot transformer params is
+    dropped by `_flat_params_to_transformer` (Identity((1,)) takes its place),
+    so the bijection output is invariant to perturbations of that row. By
+    extension JAX autodiff zeros the gradient on it automatically -- no
+    explicit stop_gradient is needed.
     """
-    bij = unwrap(
-        MaskedAutoregressiveHeterogeneous(
-            key, transformer=Affine(), dim=4, stop_grad_until=1, **NN
-        )
+    k1, k2 = jr.split(key)
+    identity_idx = 2
+    bij = MaskedAutoregressiveHeterogeneous(
+        k1, transformer=Affine(), dim=4, identity_idx=identity_idx, **NN
     )
-    x = jr.normal(jr.split(key)[1], (4,))
-    with pytest.raises(TypeError):
-        bij.transform(x)
+    x = jr.normal(k2, (4,))
+
+    # MLP output is row-major in (dim, num_params).
+    last_bias = bij.masked_autoregressive_mlp.layers[-1].bias
+    num_params = last_bias.shape[0] // 4
+    block = slice(identity_idx * num_params, (identity_idx + 1) * num_params)
+
+    new_bias = last_bias.at[block].add(100.0)
+    bij_perturbed = eqx.tree_at(
+        lambda b: b.masked_autoregressive_mlp.layers[-1].bias, bij, new_bias
+    )
+
+    y_orig = unwrap(bij).transform(x)
+    y_perturbed = unwrap(bij_perturbed).transform(x)
+    assert jnp.allclose(y_orig, y_perturbed, atol=1e-12)
 
 
 # --------------------------- MaskedCond (module 7) ----------------------------

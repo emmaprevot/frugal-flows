@@ -44,8 +44,6 @@ class MaskedAutoregressiveHeterogeneous(AbstractBijection):
         cond_dim_nomask: Size of the unmasked conditioning block. Defaults to None.
         cond_dim_mask: Size of the masked conditioning block. Defaults to None.
         identity_idx: Coordinate held to the identity. Defaults to 0.
-        stop_grad_until: If set, stops gradients on a slice of the transformer
-            output params. Defaults to None.
         nn_width: Neural network width.
         nn_depth: Neural network depth.
         nn_activation: Neural network activation. Defaults to jnn.relu.
@@ -55,7 +53,6 @@ class MaskedAutoregressiveHeterogeneous(AbstractBijection):
     cond_shape: tuple[int, ...] | None
     transformer_constructor: Callable
     masked_autoregressive_mlp: eqx.nn.MLP
-    stop_grad_until: int | None
     identity_idx: int
 
     def __init__(
@@ -67,7 +64,6 @@ class MaskedAutoregressiveHeterogeneous(AbstractBijection):
         cond_dim_nomask: int | None = None,
         cond_dim_mask: int | None = None,
         identity_idx: int = 0,
-        stop_grad_until: int | None = None,
         nn_width: int,
         nn_depth: int,
         nn_activation: Callable = jnn.relu,
@@ -108,35 +104,28 @@ class MaskedAutoregressiveHeterogeneous(AbstractBijection):
         hidden_ranks = jnp.arange(nn_width) % dim
         out_ranks = jnp.repeat(jnp.arange(dim), num_params)
 
-        self.masked_autoregressive_mlp = (
-            masked_autoregressive_mlp_stopped_heterogeneous(
-                in_ranks,
-                hidden_ranks,
-                out_ranks,
-                depth=nn_depth,
-                activation=nn_activation,
-                key=key,
-            )
+        self.masked_autoregressive_mlp = masked_autoregressive_mlp_heterogeneous(
+            in_ranks,
+            hidden_ranks,
+            out_ranks,
+            depth=nn_depth,
+            activation=nn_activation,
+            key=key,
         )
 
         self.transformer_constructor = constructor
         self.shape = (dim,)
-        self.stop_grad_until = stop_grad_until
         self.identity_idx = identity_idx
 
     def transform(self, x, condition=None):
         nn_input = x if condition is None else jnp.hstack((x, condition))
-        transformer_params = self.masked_autoregressive_mlp(
-            nn_input, stop_grad_until=self.stop_grad_until
-        )
+        transformer_params = self.masked_autoregressive_mlp(nn_input)
         transformer = self._flat_params_to_transformer(transformer_params)
         return transformer.transform(x)
 
     def transform_and_log_det(self, x, condition=None):
         nn_input = x if condition is None else jnp.hstack((x, condition))
-        transformer_params = self.masked_autoregressive_mlp(
-            nn_input, stop_grad_until=self.stop_grad_until
-        )
+        transformer_params = self.masked_autoregressive_mlp(nn_input)
         transformer = self._flat_params_to_transformer(transformer_params)
         return transformer.transform_and_log_det(x)
 
@@ -150,9 +139,7 @@ class MaskedAutoregressiveHeterogeneous(AbstractBijection):
         """One 'step' in computing the inverse."""
         y, rank = init
         nn_input = y if condition is None else jnp.hstack((y, condition))
-        transformer_params = self.masked_autoregressive_mlp(
-            nn_input, stop_grad_until=self.stop_grad_until
-        )
+        transformer_params = self.masked_autoregressive_mlp(nn_input)
         transformer = self._flat_params_to_transformer(transformer_params)
         x = transformer.inverse(y)
         x = y.at[rank].set(x[rank])
@@ -190,30 +177,12 @@ class MaskedAutoregressiveHeterogeneous(AbstractBijection):
         return Concatenate(to_concat)
 
 
-class StoppedMLPHeterogeneous(eqx.nn.MLP):
-    def __call__(self, x, identity_idx=None, stop_grad_until=None):
-        transformer_params = super().__call__(x)
-        if stop_grad_until is not None:
-            params_stopped = transformer_params[
-                (stop_grad_until * identity_idx + 1) : (
-                    (stop_grad_until * (identity_idx + 1)) + 1
-                )
-            ]
-            params_stopped = jax.lax.stop_gradient(params_stopped)
-            transformer_params = transformer_params.at[
-                (stop_grad_until * identity_idx + 1) : (
-                    (stop_grad_until * (identity_idx + 1)) + 1
-                )
-            ].set(params_stopped)
-        return transformer_params
-
-
-def masked_autoregressive_mlp_stopped_heterogeneous(
+def masked_autoregressive_mlp_heterogeneous(
     in_ranks: Int[Array, " in_size"],
     hidden_ranks: Int[Array, " hidden_size"],
     out_ranks: Int[Array, " out_size"],
     **kwargs,
-) -> StoppedMLPHeterogeneous:
+) -> eqx.nn.MLP:
     """Returns an equinox multilayer perceptron, with autoregressive masks.
 
     The weight matrices are wrapped using :class:`~flowjax.wrappers.Where`, which
@@ -228,8 +197,8 @@ def masked_autoregressive_mlp_stopped_heterogeneous(
     """
     in_ranks, hidden_ranks, out_ranks = (
         jnp.asarray(a, jnp.int32) for a in (in_ranks, hidden_ranks, out_ranks)
-    )  # TODO remove if using beartype
-    mlp = StoppedMLPHeterogeneous(
+    )
+    mlp = eqx.nn.MLP(
         in_size=len(in_ranks),
         out_size=len(out_ranks),
         width_size=len(hidden_ranks),

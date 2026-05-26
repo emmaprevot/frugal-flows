@@ -48,9 +48,6 @@ class MaskedAutoregressiveFirstUniform(AbstractBijection):
         dim: Dimension.
         cond_dim_nomask: Size of the unmasked conditioning block. Defaults to None.
         cond_dim_mask: Size of the masked conditioning block. Defaults to None.
-        stop_grad_until: If set, gradients are stopped on the first
-            ``stop_grad_until`` transformer output params (used to freeze part
-            of the transformer during training). Defaults to None.
         nn_width: Neural network width.
         nn_depth: Neural network depth.
         nn_activation: Neural network activation. Defaults to jnn.relu.
@@ -60,7 +57,6 @@ class MaskedAutoregressiveFirstUniform(AbstractBijection):
     cond_shape: tuple[int, ...] | None
     transformer_constructor: Callable
     masked_autoregressive_mlp: eqx.nn.MLP
-    stop_grad_until: int | None
 
     def __init__(
         self,
@@ -70,7 +66,6 @@ class MaskedAutoregressiveFirstUniform(AbstractBijection):
         dim: int,
         cond_dim_nomask: int | None = None,
         cond_dim_mask: int | None = None,
-        stop_grad_until: int | None = None,
         nn_width: int,
         nn_depth: int,
         nn_activation: Callable = jnn.relu,
@@ -111,7 +106,7 @@ class MaskedAutoregressiveFirstUniform(AbstractBijection):
         hidden_ranks = jnp.arange(nn_width) % dim
         out_ranks = jnp.repeat(jnp.arange(dim), num_params)
 
-        self.masked_autoregressive_mlp = masked_autoregressive_mlp_stopped(
+        self.masked_autoregressive_mlp = masked_autoregressive_mlp(
             in_ranks,
             hidden_ranks,
             out_ranks,
@@ -122,21 +117,16 @@ class MaskedAutoregressiveFirstUniform(AbstractBijection):
 
         self.transformer_constructor = constructor
         self.shape = (dim,)
-        self.stop_grad_until = stop_grad_until
 
     def transform(self, x, condition=None):
         nn_input = x if condition is None else jnp.hstack((x, condition))
-        transformer_params = self.masked_autoregressive_mlp(
-            nn_input, stop_grad_until=self.stop_grad_until
-        )
+        transformer_params = self.masked_autoregressive_mlp(nn_input)
         transformer = self._flat_params_to_transformer(transformer_params)
         return transformer.transform(x)
 
     def transform_and_log_det(self, x, condition=None):
         nn_input = x if condition is None else jnp.hstack((x, condition))
-        transformer_params = self.masked_autoregressive_mlp(
-            nn_input, stop_grad_until=self.stop_grad_until
-        )
+        transformer_params = self.masked_autoregressive_mlp(nn_input)
         transformer = self._flat_params_to_transformer(transformer_params)
         return transformer.transform_and_log_det(x)
 
@@ -150,9 +140,7 @@ class MaskedAutoregressiveFirstUniform(AbstractBijection):
         """One 'step' in computing the inverse."""
         y, rank = init
         nn_input = y if condition is None else jnp.hstack((y, condition))
-        transformer_params = self.masked_autoregressive_mlp(
-            nn_input, stop_grad_until=self.stop_grad_until
-        )
+        transformer_params = self.masked_autoregressive_mlp(nn_input)
         transformer = self._flat_params_to_transformer(transformer_params)
         x = transformer.inverse(y)
         x = y.at[rank].set(x[rank])
@@ -174,25 +162,12 @@ class MaskedAutoregressiveFirstUniform(AbstractBijection):
         )
 
 
-class StoppedMLP(eqx.nn.MLP):
-    def __call__(self, x, stop_grad_until=None):
-        transformer_params = super().__call__(x)
-        if stop_grad_until is not None:
-            params_stopped, params_notstopped = (
-                transformer_params[:stop_grad_until],
-                transformer_params[stop_grad_until:],
-            )
-            params_stopped = jax.lax.stop_gradient(params_stopped)
-            transformer_params = jnp.hstack((params_stopped, params_notstopped))
-        return transformer_params
-
-
-def masked_autoregressive_mlp_stopped(
+def masked_autoregressive_mlp(
     in_ranks: Int[Array, " in_size"],
     hidden_ranks: Int[Array, " hidden_size"],
     out_ranks: Int[Array, " out_size"],
     **kwargs,
-) -> StoppedMLP:
+) -> eqx.nn.MLP:
     """Returns an equinox multilayer perceptron, with autoregressive masks.
 
     The weight matrices are wrapped using :class:`~flowjax.wrappers.Where`, which
@@ -207,8 +182,8 @@ def masked_autoregressive_mlp_stopped(
     """
     in_ranks, hidden_ranks, out_ranks = (
         jnp.asarray(a, jnp.int32) for a in (in_ranks, hidden_ranks, out_ranks)
-    )  # TODO remove if using beartype
-    mlp = StoppedMLP(
+    )
+    mlp = eqx.nn.MLP(
         in_size=len(in_ranks),
         out_size=len(out_ranks),
         width_size=len(hidden_ranks),
