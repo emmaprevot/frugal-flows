@@ -29,34 +29,30 @@ class LocCond(AbstractBijection):
 
     Note:
         ``transform``/``inverse`` index ``condition[0]`` unconditionally, so a
-        ``condition`` argument is always required even though the signature
-        defaults it to ``None`` (the default exists only for interface
-        compatibility with ``flowjax.AbstractBijection``).
+        non-None ``condition`` is always required; the ``condition=None``
+        default in the method signatures is only for interface compatibility
+        with ``flowjax.AbstractBijection``.
 
     Args:
         ate: Average treatment effect — the per-unit shift applied per unit of
             ``condition[0]``. Defaults to 0. Its shape sets the bijection
             ``shape``.
-        cond_dim: If given, sets ``cond_shape = (cond_dim,)``; otherwise
-            ``cond_shape`` is ``None``.
+        cond_dim: Length of the conditioning vector. Defaults to 1 (the minimum
+            — only ``condition[0]`` is read). Sets ``cond_shape = (cond_dim,)``.
     """
 
     shape: tuple[int, ...]
-    # cond_shape: ClassVar[None] = None
-    cond_shape: int | None = None
+    cond_shape: tuple[int, ...]
     ate: Array
 
     def __init__(
         self,
         ate: ArrayLike = 0,
-        cond_dim: ArrayLike = None,
+        cond_dim: int = 1,
     ):
         self.ate = arraylike_to_array(ate)
         self.shape = self.ate.shape
-        if cond_dim is None:
-            self.cond_shape = None
-        else:
-            self.cond_shape = (cond_dim,)
+        self.cond_shape = (cond_dim,)
 
     def transform(self, x, condition=None):
         return x + self.ate * condition[0]
