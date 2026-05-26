@@ -51,9 +51,9 @@ class FrugalFlowModel:
         self.Z_disc = Z_disc
         self.Z_cont = Z_cont
         self.conf_shape = 0
-        if Z_disc != None:
+        if Z_disc is not None:
             self.conf_shape += self.Z_disc.shape[1]
-        if Z_cont != None:
+        if Z_cont is not None:
             self.conf_shape += self.Z_cont.shape[1]
         self.res = None
         self.frugal_flow = None
@@ -99,9 +99,9 @@ class FrugalFlowModel:
         )
 
     def train_frugal_flow(self, key, hyperparam_dict, causal_model, causal_model_args):
-        if self.res['u_z_cont'] == None:
+        if self.res['u_z_cont'] is None:
             uz_full_samples = self.res['u_z_discr']
-        elif self.res['u_z_discr'] == None:
+        elif self.res['u_z_discr'] is None:
             uz_full_samples = self.res['u_z_cont']
         else:
             uz_full_samples = jnp.hstack([self.res['u_z_cont'], self.res['u_z_discr']])
@@ -118,9 +118,9 @@ class FrugalFlowModel:
         self.vmap_frugal_flow = jax.vmap(fun=self.frugal_flow.bijection.transform, in_axes=(0))
 
     def train_propensity_flow(self, key, hyperparam_dict):
-        if self.Z_disc == None:
+        if self.Z_disc is None:
             condition = self.Z_cont
-        elif self.Z_cont == None:
+        elif self.Z_cont is None:
             condition = self.Z_disc
         else:
             condition = jnp.hstack([self.Z_disc, self.Z_cont])
@@ -147,15 +147,15 @@ class FrugalFlowModel:
         uz_samples = self.vmap_frugal_flow(x=frugal_baselines, condition=jnp.zeros(u_yx.shape))[:, 1:]
 
         # Inverse probability integral transform
-        if self.Z_cont != None:
+        if self.Z_cont is not None:
             Z_cont_samples = from_quantiles_to_marginal_cont(
                 key=subkeys[2],
                 flow=self.res['z_cont_flows'],
                 n_samples=sampling_size,
                 u_z=uz_samples[:, :self.Z_cont.shape[1]]
             )
-        if self.Z_disc != None:
-            if self.Z_cont == None:
+        if self.Z_disc is not None:
+            if self.Z_cont is None:
                 print(uz_samples.shape)
                 Z_disc_samples = from_quantiles_to_marginal_discr(
                     key=subkeys[3],
@@ -174,9 +174,9 @@ class FrugalFlowModel:
                     n_samples=sampling_size,
                     u_z=uz_samples[:, self.Z_cont.shape[1]:]
                 )
-        if self.Z_disc == None:
+        if self.Z_disc is None:
             full_Z_samples = Z_cont_samples
-        elif self.Z_cont == None:
+        elif self.Z_cont is None:
             full_Z_samples = Z_disc_samples
         else:
             full_Z_samples = jnp.hstack([Z_cont_samples, Z_disc_samples])
