@@ -3,16 +3,15 @@
 Continuous path is tightly coupled to flowjax flow internals (hardcoded
 bijection indices) and needs a trained flow; that is a Phase-2 fragility, not
 covered here. These tests cover the discrete path: correctness of the
-empirical-CDF inverse, and a regression marker for bug #7 (the vmapped
-fast-path in ``from_quantiles_to_marginal_discr`` is broken and dead).
+empirical-CDF inverse, the vmapped fast path (equal category counts across
+variables), and the loop fallback (unequal category counts, when the rank-
+mapping arrays can't be stacked).
 """
 
 from __future__ import annotations
 
-import jax
 import jax.numpy as jnp
 import jax.random as jr
-import pytest
 
 from frugal_flows.sample_marginals import (
     from_quantiles_to_marginal_discr,
@@ -30,9 +29,8 @@ def test_univariate_discrete_inverse_cdf_is_correct():
     assert jnp.array_equal(out, jnp.array([10, 20, 30, 30]))
 
 
-def test_from_quantiles_to_marginal_discr_correct_via_loop_fallback():
-    """End-to-end discrete inverse PIT. Output is correct because the (broken)
-    vmapped path is caught and the Python-loop fallback runs."""
+def test_from_quantiles_to_marginal_discr_single_variable():
+    """End-to-end discrete inverse PIT with one variable."""
     mappings = {0: {10: 0, 20: 1, 30: 2}}
     empirical_cdfs = jnp.array([[0.5, 0.8, 1.0]])
     u_z = jnp.array([[0.3], [0.6], [0.9]])
@@ -48,17 +46,61 @@ def test_from_quantiles_to_marginal_discr_correct_via_loop_fallback():
     assert jnp.array_equal(out.ravel(), jnp.array([10, 20, 30]))
 
 
-def test_bug7_vmapped_fastpath_is_broken_and_dead():
-    """REGRESSION MARKER (bug #7): the vmapped fast-path as written in
-    from_quantiles_to_marginal_discr passes 5 args to a 3-arg function, so it
-    always raises and is silently swallowed by a bare `except Exception`.
-    Pin the signature mismatch so a future fix is deliberate."""
-    keys = jr.split(jr.PRNGKey(0), 1)
-    empirical_cdfs = jnp.array([[0.5, 0.8, 1.0]])
-    z_map = jnp.array([[10, 20, 30]])
-    unis_T = jnp.array([[0.3, 0.6, 0.9]])
-    vmapped = jax.vmap(
-        univariate_from_quantiles_to_marginal_discr, in_axes=(0, 0, None, 0, 0)
+def test_fast_path_correct_on_equal_category_counts():
+    """Two variables with the same number of categories: rank-mapping
+    arrays stack cleanly, fast vmapped path runs, output matches the
+    explicit per-variable evaluation."""
+    mappings = {0: {10: 0, 20: 1, 30: 2}, 1: {100: 0, 200: 1, 300: 2}}
+    empirical_cdfs = jnp.array([[0.5, 0.8, 1.0], [0.4, 0.7, 1.0]])
+    u_z = jnp.array([[0.3, 0.5], [0.6, 0.6], [0.9, 0.95]])
+    out = from_quantiles_to_marginal_discr(
+        key=jr.PRNGKey(0),
+        mappings=mappings,
+        nvars=2,
+        empirical_cdfs=empirical_cdfs,
+        n_samples=3,
+        u_z=u_z,
     )
-    with pytest.raises(TypeError):
-        vmapped(keys, empirical_cdfs, 3, z_map, unis_T)
+    expected = jnp.stack(
+        [
+            univariate_from_quantiles_to_marginal_discr(
+                empirical_cdfs[d],
+                jnp.array(list(mapping_d.keys())),
+                u_z.T[d],
+            )
+            for d, mapping_d in enumerate(mappings.values())
+        ]
+    ).T
+    assert out.shape == (3, 2)
+    assert jnp.array_equal(out, expected)
+
+
+def test_loop_fallback_runs_on_unequal_category_counts():
+    """Two variables with different category counts (2 and 3): the
+    rank-mapping arrays can't be stacked, so the fast path raises
+    ValueError and the Python-loop fallback runs. Output still matches
+    the explicit per-variable evaluation."""
+    mappings = {0: {10: 0, 20: 1}, 1: {100: 0, 200: 1, 300: 2}}
+    # empirical_cdfs is padded to (n_vars, max_n_categories) with trailing 1s.
+    empirical_cdfs = jnp.array([[0.5, 1.0, 1.0], [0.4, 0.7, 1.0]])
+    u_z = jnp.array([[0.3, 0.5], [0.6, 0.6], [0.9, 0.95]])
+    out = from_quantiles_to_marginal_discr(
+        key=jr.PRNGKey(0),
+        mappings=mappings,
+        nvars=2,
+        empirical_cdfs=empirical_cdfs,
+        n_samples=3,
+        u_z=u_z,
+    )
+    expected = jnp.stack(
+        [
+            univariate_from_quantiles_to_marginal_discr(
+                empirical_cdfs[d],
+                jnp.array(list(mapping_d.keys())),
+                u_z.T[d],
+            )
+            for d, mapping_d in enumerate(mappings.values())
+        ]
+    ).T
+    assert out.shape == (3, 2)
+    assert jnp.array_equal(out, expected)

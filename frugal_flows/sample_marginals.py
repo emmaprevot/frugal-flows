@@ -117,23 +117,23 @@ def from_quantiles_to_marginal_discr(
         key, subkey = jr.split(key)
         unis_standard = jr.uniform(subkey, shape=(n_samples, nvars))
 
-    keys = jr.split(key, nvars)
-    try:
+    # All variables with the same number of categories => the per-variable
+    # rank-mapping arrays stack into a rectangular array and we can vmap over
+    # variables. Different category counts => fall back to a Python loop.
+    n_categories_per_var = {len(d) for d in mappings.values()}
+    if len(n_categories_per_var) == 1:
         z_discr_rank_mapping_array = jnp.vstack(
             [jnp.array(list(d.keys())) for d in mappings.values()]
         )
         vmapped_from_quantiles_to_marginal_discr = jax.vmap(
-            univariate_from_quantiles_to_marginal_discr, in_axes=(0, 0, None, 0, 0)
+            univariate_from_quantiles_to_marginal_discr, in_axes=(0, 0, 0)
         )
-
         marginal_samples_discr = vmapped_from_quantiles_to_marginal_discr(
-            keys,
             empirical_cdfs,
-            n_samples,
             z_discr_rank_mapping_array,
             unis_standard.T,
         )
-    except Exception:
+    else:
         marginal_samples_discr = []
         for d, mapping_d in enumerate(mappings.values()):
             z_discr_rank_mapping_array_d = jnp.array(list(mapping_d.keys()))
