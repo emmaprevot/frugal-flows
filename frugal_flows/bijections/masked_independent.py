@@ -18,21 +18,15 @@ from jax.typing import ArrayLike
 
 
 class MaskedIndependent(AbstractBijection):
-    """Masked independent bijection.
+    """Independent per-coordinate bijection.
 
-    Each coordinate is transformed by its own elementwise ``transformer`` whose
-    parameters come from an MLP. The MLP's first-layer weights are fully masked,
-    so the transformer parameters do not depend on the input: every dimension
-    gets an independent, trainable (but input-independent) transformer. This is
-    the "independent" flow used for fitting marginals, with no autoregressive
-    conditioning between dimensions (see ``basic_flows.masked_independent_flow``).
-
-    Warning:
-        ``masked_independent_mlp`` computes ``in_ranks``/``hidden_ranks``/
-        ``out_ranks`` but does not use them: the rank-based MADE masking is not
-        applied. The only mask is an all-zeros mask on the first layer, which
-        blocks every input→hidden edge (not a rank-structured subset). The
-        ``Refs`` below describe MADE for background only.
+    Each coordinate is transformed by its own elementwise ``transformer``
+    (e.g. a rational-quadratic spline). The transformer parameters are produced
+    by an MLP whose first-layer weights are zero-masked, which makes them
+    constant in the input — i.e. each dimension has its own trainable,
+    input-independent transformer. This is the correct unconditional
+    parameterisation for fitting marginal CDFs independently across dimensions
+    (see ``basic_flows.masked_independent_flow``).
 
     Refs:
         - https://arxiv.org/abs/1705.07057v4
