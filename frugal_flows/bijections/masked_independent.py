@@ -12,9 +12,9 @@ import jax.numpy as jnp
 from flowjax.bijections.bijection import AbstractBijection
 from flowjax.bijections.jax_transforms import Vmap
 from flowjax.utils import get_ravelled_pytree_constructor
-from flowjax.wrappers import Where
 from jax import Array
 from jax.typing import ArrayLike
+from paramax import NonTrainable, Parameterize
 
 
 class MaskedIndependent(AbstractBijection):
@@ -64,7 +64,11 @@ class MaskedIndependent(AbstractBijection):
                 "Only unconditional transformers with shape () are supported.",
             )
 
-        constructor, num_params = get_ravelled_pytree_constructor(transformer)
+        constructor, num_params = get_ravelled_pytree_constructor(
+            transformer,
+            filter_spec=eqx.is_inexact_array,
+            is_leaf=lambda leaf: isinstance(leaf, NonTrainable),
+        )
 
         if cond_dim is None:
             self.cond_shape = None
@@ -90,23 +94,11 @@ class MaskedIndependent(AbstractBijection):
         self.shape = (dim,)
         self.cond_shape = None if cond_dim is None else (cond_dim,)
 
-    def transform(self, x, condition=None):
-        nn_input = x if condition is None else jnp.hstack((x, condition))
-        transformer_params = self.masked_independent_mlp(nn_input)
-        transformer = self._flat_params_to_transformer(transformer_params)
-        return transformer.transform(x)
-
     def transform_and_log_det(self, x, condition=None):
         nn_input = x if condition is None else jnp.hstack((x, condition))
         transformer_params = self.masked_independent_mlp(nn_input)
         transformer = self._flat_params_to_transformer(transformer_params)
         return transformer.transform_and_log_det(x)
-
-    def inverse(self, y, condition=None):
-        init = (y, 0)
-        fn = partial(self.inv_scan_fn, condition=condition)
-        (x, _), _ = jax.lax.scan(fn, init, None, length=len(y))
-        return x
 
     def inv_scan_fn(self, init, _, condition):
         """One 'step' in computing the inverse."""
@@ -119,7 +111,9 @@ class MaskedIndependent(AbstractBijection):
         return (x, rank + 1), None
 
     def inverse_and_log_det(self, y, condition=None):
-        x = self.inverse(y, condition)
+        init = (y, 0)
+        fn = partial(self.inv_scan_fn, condition=condition)
+        (x, _), _ = jax.lax.scan(fn, init, None, length=len(y))
         log_det = self.transform_and_log_det(x, condition)[1]
         return x, -log_det
 
@@ -139,9 +133,10 @@ def masked_independent_mlp(
 ) -> eqx.nn.MLP:
     """Returns an equinox multilayer perceptron, with independent masks.
 
-    The weight matrices are wrapped using :class:`~flowjax.wrappers.Where`, which
-    will apply the masking when :class:`~flowjax.wrappers.unwrap` is called on the MLP.
-    For details of how the masks are formed, see https://arxiv.org/pdf/1502.03509.pdf.
+    Masked positions are enforced at network-use time via a parameter wrapper,
+    not at construction. Training updates the underlying weight; masked entries
+    remain 0 in the forward pass. For mask construction details, see
+    https://arxiv.org/pdf/1502.03509.pdf.
 
     Args:
         in_ranks: The ranks of the inputs.
@@ -165,7 +160,9 @@ def masked_independent_mlp(
         if i == 0:
             mask = jnp.zeros((mlp.width_size, mlp.in_size))
             masked_linear = eqx.tree_at(
-                lambda linear: linear.weight, linear, Where(mask, linear.weight, 0)
+                lambda linear: linear.weight,
+                linear,
+                Parameterize(jnp.where, mask, linear.weight, 0),
             )
         else:
             masked_linear = linear

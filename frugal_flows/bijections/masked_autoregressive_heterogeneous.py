@@ -15,8 +15,8 @@ from flowjax.bijections.jax_transforms import Vmap
 from flowjax.bijections.utils import Identity
 from flowjax.masks import rank_based_mask
 from flowjax.utils import get_ravelled_pytree_constructor
-from flowjax.wrappers import Where
 from jax import Array
+from paramax import NonTrainable, Parameterize
 from jaxtyping import Array, Int
 
 
@@ -73,7 +73,11 @@ class MaskedAutoregressiveHeterogeneous(AbstractBijection):
                 "Only unconditional transformers with shape () are supported.",
             )
 
-        constructor, num_params = get_ravelled_pytree_constructor(transformer)
+        constructor, num_params = get_ravelled_pytree_constructor(
+            transformer,
+            filter_spec=eqx.is_inexact_array,
+            is_leaf=lambda leaf: isinstance(leaf, NonTrainable),
+        )
 
         if cond_dim_mask is None:
             if cond_dim_nomask is None:
@@ -117,23 +121,11 @@ class MaskedAutoregressiveHeterogeneous(AbstractBijection):
         self.shape = (dim,)
         self.identity_idx = identity_idx
 
-    def transform(self, x, condition=None):
-        nn_input = x if condition is None else jnp.hstack((x, condition))
-        transformer_params = self.masked_autoregressive_mlp(nn_input)
-        transformer = self._flat_params_to_transformer(transformer_params)
-        return transformer.transform(x)
-
     def transform_and_log_det(self, x, condition=None):
         nn_input = x if condition is None else jnp.hstack((x, condition))
         transformer_params = self.masked_autoregressive_mlp(nn_input)
         transformer = self._flat_params_to_transformer(transformer_params)
         return transformer.transform_and_log_det(x)
-
-    def inverse(self, y, condition=None):
-        init = (y, 0)
-        fn = partial(self.inv_scan_fn, condition=condition)
-        (x, _), _ = jax.lax.scan(fn, init, None, length=len(y))
-        return x
 
     def inv_scan_fn(self, init, _, condition):
         """One 'step' in computing the inverse."""
@@ -146,7 +138,9 @@ class MaskedAutoregressiveHeterogeneous(AbstractBijection):
         return (x, rank + 1), None
 
     def inverse_and_log_det(self, y, condition=None):
-        x = self.inverse(y, condition)
+        init = (y, 0)
+        fn = partial(self.inv_scan_fn, condition=condition)
+        (x, _), _ = jax.lax.scan(fn, init, None, length=len(y))
         log_det = self.transform_and_log_det(x, condition)[1]
         return x, -log_det
 
@@ -185,9 +179,10 @@ def masked_autoregressive_mlp_heterogeneous(
 ) -> eqx.nn.MLP:
     """Returns an equinox multilayer perceptron, with autoregressive masks.
 
-    The weight matrices are wrapped using :class:`~flowjax.wrappers.Where`, which
-    will apply the masking when :class:`~flowjax.wrappers.unwrap` is called on the MLP.
-    For details of how the masks are formed, see https://arxiv.org/pdf/1502.03509.pdf.
+    Masked positions are enforced at network-use time via a parameter wrapper,
+    not at construction. Training updates the underlying weight; masked entries
+    remain 0 in the forward pass. For mask construction details, see
+    https://arxiv.org/pdf/1502.03509.pdf.
 
     Args:
         in_ranks: The ranks of the inputs.
@@ -210,7 +205,9 @@ def masked_autoregressive_mlp_heterogeneous(
     for i, linear in enumerate(mlp.layers):
         mask = rank_based_mask(ranks[i], ranks[i + 1], eq=i != len(mlp.layers) - 1)
         masked_linear = eqx.tree_at(
-            lambda linear: linear.weight, linear, Where(mask, linear.weight, 0)
+            lambda linear: linear.weight,
+            linear,
+            Parameterize(jnp.where, mask, linear.weight, 0),
         )
         masked_layers.append(masked_linear)
 

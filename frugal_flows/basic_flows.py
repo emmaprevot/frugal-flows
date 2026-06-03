@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 import equinox as eqx
+import jax
 import jax.nn as jnn
 import jax.numpy as jnp
 import jax.random as jr
@@ -10,20 +11,18 @@ from flowjax.bijections import (
     Affine,
     Chain,
     Invert,
-    Loc,
     MaskedAutoregressive,
     Permute,
     RationalQuadraticSpline,
     Scan,
-    SoftPlus,
     Tanh,
 )
 from flowjax.distributions import AbstractDistribution, Transformed, Uniform
 from flowjax.flows import _add_default_permute, masked_autoregressive_flow
 from flowjax.train import fit_to_data
-from flowjax.wrappers import BijectionReparam, NonTrainable
 from jax import Array
 from jax.typing import ArrayLike
+from paramax import NonTrainable, Parameterize
 
 from frugal_flows.bijections import (
     MaskedAutoregressiveFirstUniform,
@@ -32,6 +31,13 @@ from frugal_flows.bijections import (
     MaskedAutoregressiveTransformerCond,
     MaskedIndependent,
 )
+
+
+def _freeze_arrays(subtree):
+    return jax.tree.map(
+        lambda leaf: NonTrainable(leaf) if eqx.is_inexact_array(leaf) else leaf,
+        subtree,
+    )
 
 
 def univariate_marginal_flow(
@@ -97,7 +103,7 @@ def univariate_marginal_flow(
     flow = eqx.tree_at(
         where=lambda flow: flow.bijection.bijections[0],
         pytree=flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     key, subkey = jr.split(key)
@@ -106,7 +112,7 @@ def univariate_marginal_flow(
     flow, losses = fit_to_data(
         key=subkey,
         dist=flow,
-        x=z_cont,
+        data=z_cont,
         learning_rate=learning_rate,
         max_patience=max_patience,
         max_epochs=max_epochs,
@@ -154,7 +160,7 @@ def masked_independent_flow(
         transformer = eqx.tree_at(
             lambda aff: aff.scale,
             Affine(),
-            BijectionReparam(1, Chain([SoftPlus(), NonTrainable(Loc(1e-2))])),
+            Parameterize(lambda x: jnn.softplus(x) + 1e-2, jnp.array(1.0)),
         )
     dim = base_dist.shape[-1]
 
@@ -215,7 +221,7 @@ def masked_autoregressive_flow_first_uniform(
         transformer = eqx.tree_at(
             lambda aff: aff.scale,
             Affine(),
-            BijectionReparam(1, Chain([SoftPlus(), NonTrainable(Loc(1e-2))])),
+            Parameterize(lambda x: jnn.softplus(x) + 1e-2, jnp.array(1.0)),
         )
     dim = base_dist.shape[-1]
 
@@ -260,11 +266,10 @@ def _add_default_permute_but_first(bijection: AbstractBijection, dim: int, key: 
 
 
 def _affine_with_min_scale(min_scale: float = 1e-2) -> Affine:
-    scale_reparam = Chain([SoftPlus(), NonTrainable(Loc(min_scale))])
     return eqx.tree_at(
         where=lambda aff: aff.scale,
         pytree=Affine(),
-        replace=BijectionReparam(jnp.array(1), scale_reparam),
+        replace=Parameterize(lambda x: jnn.softplus(x) + min_scale, jnp.array(1.0)),
     )
 
 
@@ -306,7 +311,7 @@ def masked_autoregressive_flow_heterogeneous(
         transformer = eqx.tree_at(
             lambda aff: aff.scale,
             Affine(),
-            BijectionReparam(1, Chain([SoftPlus(), NonTrainable(Loc(1e-2))])),
+            Parameterize(lambda x: jnn.softplus(x) + 1e-2, jnp.array(1.0)),
         )
     dim = base_dist.shape[-1]
 
@@ -450,7 +455,7 @@ def masked_autoregressive_flow_masked_cond(
         transformer = eqx.tree_at(
             lambda aff: aff.scale,
             Affine(),
-            BijectionReparam(1, Chain([SoftPlus(), NonTrainable(Loc(1e-2))])),
+            Parameterize(lambda x: jnn.softplus(x) + 1e-2, jnp.array(1.0)),
         )
     dim = base_dist.shape[-1]
 

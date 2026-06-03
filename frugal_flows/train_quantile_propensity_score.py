@@ -1,4 +1,5 @@
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import optax
@@ -10,7 +11,7 @@ from flowjax.bijections import (
 from flowjax.distributions import Transformed, Uniform, _StandardUniform
 from flowjax.flows import masked_autoregressive_flow
 from flowjax.train import fit_to_data
-from flowjax.wrappers import NonTrainable
+from paramax import NonTrainable
 from jaxtyping import Array
 
 from frugal_flows.causal_flows import univariate_discrete_cdf
@@ -84,16 +85,22 @@ def train_quantile_propensity_score(
 
     assert isinstance(flow.base_dist, _StandardUniform)
 
+    def _freeze_arrays(subtree):
+        return jax.tree.map(
+            lambda leaf: NonTrainable(leaf) if eqx.is_inexact_array(leaf) else leaf,
+            subtree,
+        )
+
     flow = eqx.tree_at(
         where=lambda flow: flow.bijection.bijections[0],
         pytree=flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     flow = eqx.tree_at(
         where=lambda flow: flow.bijection.bijections[-1],
         pytree=flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     # Train
@@ -101,11 +108,10 @@ def train_quantile_propensity_score(
     flow, losses = fit_to_data(
         key=subkey,
         dist=flow,
-        x=u_x[:, None],
+        data=(u_x[:, None], condition),
         learning_rate=learning_rate,
         max_patience=max_patience,
         max_epochs=max_epochs,
-        condition=condition,
         optimizer=optimizer,
         show_progress=show_progress,
         batch_size=batch_size,

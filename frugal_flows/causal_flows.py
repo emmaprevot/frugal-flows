@@ -18,7 +18,7 @@ from flowjax.bijections.utils import Identity
 from flowjax.distributions import Transformed, Uniform, _StandardUniform
 from flowjax.flows import masked_autoregressive_flow
 from flowjax.train import fit_to_data
-from flowjax.wrappers import NonTrainable
+from paramax import NonTrainable
 from jaxtyping import ArrayLike
 
 from frugal_flows.basic_flows import (
@@ -30,6 +30,13 @@ from frugal_flows.basic_flows import (
     univariate_marginal_flow,
 )
 from frugal_flows.bijections import LocCond, UnivariateNormalCDF
+
+
+def _freeze_arrays(subtree):
+    return jax.tree.map(
+        lambda leaf: NonTrainable(leaf) if eqx.is_inexact_array(leaf) else leaf,
+        subtree,
+    )
 
 
 def train_copula_flow(
@@ -73,13 +80,13 @@ def train_copula_flow(
     copula_flow = eqx.tree_at(
         where=lambda copula_flow: copula_flow.bijection.bijections[0],
         pytree=copula_flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     copula_flow = eqx.tree_at(
         where=lambda copula_flow: copula_flow.bijection.bijections[-1],
         pytree=copula_flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     key, subkey = jr.split(key)
@@ -88,7 +95,7 @@ def train_copula_flow(
     copula_flow, losses = fit_to_data(
         key=subkey,
         dist=copula_flow,
-        x=u_z,
+        data=u_z,
         optimizer=optimizer,
         show_progress=show_progress,
         learning_rate=learning_rate,
@@ -197,13 +204,13 @@ def train_frugal_flow_location_translation(
     frugal_flow = eqx.tree_at(
         where=lambda frugal_flow: frugal_flow.bijection.bijections[-4],
         pytree=frugal_flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     frugal_flow = eqx.tree_at(
         where=lambda frugal_flow: frugal_flow.bijection.bijections[0],
         pytree=frugal_flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     key, subkey = jr.split(key)
@@ -213,8 +220,7 @@ def train_frugal_flow_location_translation(
     frugal_flow, losses = fit_to_data(
         key=subkey,
         dist=frugal_flow,
-        x=jnp.hstack([y, u_z]),
-        condition=condition,
+        data=(jnp.hstack([y, u_z]), condition),
         optimizer=optimizer,
         show_progress=show_progress,
         learning_rate=learning_rate,
@@ -316,13 +322,13 @@ def train_frugal_flow_flexible_continuous(
     frugal_flow = eqx.tree_at(
         where=lambda frugal_flow: frugal_flow.bijection.bijections[-3],
         pytree=frugal_flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     frugal_flow = eqx.tree_at(
         where=lambda frugal_flow: frugal_flow.bijection.bijections[0],
         pytree=frugal_flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     key, subkey = jr.split(key)
@@ -332,8 +338,7 @@ def train_frugal_flow_flexible_continuous(
     frugal_flow, losses = fit_to_data(
         key=subkey,
         dist=frugal_flow,
-        x=jnp.hstack([y, u_z]),
-        condition=condition,
+        data=(jnp.hstack([y, u_z]), condition),
         optimizer=optimizer,
         show_progress=show_progress,
         learning_rate=learning_rate,
@@ -442,19 +447,19 @@ def train_frugal_flow_flexible_discrete(
     frugal_flow = eqx.tree_at(
         where=lambda frugal_flow: frugal_flow.bijection.bijections[-3],
         pytree=frugal_flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     frugal_flow = eqx.tree_at(
         where=lambda frugal_flow: frugal_flow.bijection.bijections[-1],
         pytree=frugal_flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     frugal_flow = eqx.tree_at(
         where=lambda frugal_flow: frugal_flow.bijection.bijections[0],
         pytree=frugal_flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     key, subkey = jr.split(key)
@@ -464,8 +469,7 @@ def train_frugal_flow_flexible_discrete(
     frugal_flow, losses = fit_to_data(
         key=subkey,
         dist=frugal_flow,
-        x=jnp.hstack([outcome, u_z]),
-        condition=condition,
+        data=(jnp.hstack([outcome, u_z]), condition),
         optimizer=optimizer,
         show_progress=show_progress,
         learning_rate=learning_rate,
@@ -564,13 +568,13 @@ def train_frugal_flow_gaussian(
     frugal_flow = eqx.tree_at(
         where=lambda frugal_flow: frugal_flow.bijection.bijections[-2],
         pytree=frugal_flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     frugal_flow = eqx.tree_at(
         where=lambda frugal_flow: frugal_flow.bijection.bijections[0],
         pytree=frugal_flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     key, subkey = jr.split(key)
@@ -580,8 +584,7 @@ def train_frugal_flow_gaussian(
     frugal_flow, losses = fit_to_data(
         key=subkey,
         dist=frugal_flow,
-        x=input_vars,
-        condition=condition,
+        data=(input_vars, condition),
         optimizer=optimizer,
         show_progress=show_progress,
         learning_rate=learning_rate,
@@ -758,7 +761,7 @@ def independent_continuous_marginal_flow(
     flow = eqx.tree_at(
         where=lambda flow: flow.bijection.bijections[0],
         pytree=flow,
-        replace_fn=NonTrainable,
+        replace_fn=_freeze_arrays,
     )
 
     key, subkey = jr.split(key)
@@ -767,7 +770,7 @@ def independent_continuous_marginal_flow(
     flow, losses = fit_to_data(
         key=subkey,
         dist=flow,
-        x=z_cont,
+        data=z_cont,
         learning_rate=learning_rate,
         max_patience=max_patience,
         max_epochs=max_epochs,
