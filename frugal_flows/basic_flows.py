@@ -182,14 +182,6 @@ def masked_independent_flow(
     bijection = Invert(Scan(layers)) if invert else Scan(layers)
     return Transformed(base_dist, bijection)
 
-
-# Add n_fixed: int = 1 as a parameter and pass it into MaskedAutoregressiveFirstUniform. 
-# This is a one-line change in make_layer.
-# + New constructor autoregressive_causal_margin_flow:
-# Builds the inner flow that the AutoregressiveCausalMargin bijection uses — a standard MAF over K dimensions conditioned on T. 
-# Very similar to masked_autoregressive_flow_transformer_cond already in the file, just with cond_dim=1 (treatment) and dim=K.
-
-
 def masked_autoregressive_flow_first_uniform(
     key: Array,
     *,
