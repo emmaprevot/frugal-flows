@@ -1,0 +1,85 @@
+Metadata-Version: 2.4
+Name: frugal-flows
+Version: 0.1.0
+Summary: Deep copula frugal simulations in JAX.
+Author-email: Laura Battaglia <battaglia@stats.ox.ac.uk>, Daniel de Vassimon Manela <manela@stats.ox.ac.uk>
+Project-URL: repository, https://github.com/llaurabat91/deep-copula-frugal
+Keywords: jax,copula,causal-inference,deep-learning,frugal-parametrisation
+Classifier: Intended Audience :: Science/Research
+Classifier: Natural Language :: English
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Scientific/Engineering :: Information Analysis
+Classifier: Topic :: Scientific/Engineering :: Mathematics
+Requires-Python: ~=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: jax
+Requires-Dist: flowjax
+Requires-Dist: equinox>=0.10
+Requires-Dist: tqdm
+Requires-Dist: optax
+
+# Frugal Flows
+
+This repository is the official implementation of *Marginal Causal Flows for Inference and Validation*, accepted at NeurIPS 2024.
+
+# Set-up the environment
+
+## Micromamba
+
+Environment requirements to run the paper experiments can be found in the ```environment.yaml``` file. This file can be used to set up an environment with any environment manager e.g., venv, Conda, Mamba, Micromamba. With Micromamba, you can create and activate the environment as follows:
+```
+micromamba create -f environment.yaml
+
+micromamba activate <name-environment>
+```
+This will automatically install the Frugal Flows package together with its dependencies and all the Python packages required to run the experiments in the paper. 
+
+Some experiments require additional R packages. To install these, please refer to the section "Rerunning Experiments".
+
+## Rerunning Experiments
+Rerunning all the experiments presented in the paper requires the installation of `rpy2` and other relevant R libraries. To install these, please run:
+```
+python install_rpy2_libraries.py
+``` 
+
+## Pip install Frugal Flows
+
+Alternatively, you can solely install the Frugal Flow package using `pip`:
+
+```
+git clone <URL-repository>
+
+cd frugal-flows
+
+pip install -e ./
+ 
+```
+
+The dependencies of ```frugal-flows``` can be found in the ```pyproject.toml``` file.
+
+
+
+# General Structure
+* The main bulk of the frugal flow implementation can be found in [frugal_flows](./frugal_flows/).
+* The script containing functions to generate the simulated data for the inference experiments can be found [here](./data/template_causl_simulations.py).
+* The main class which allows the user to implement Frugal Flows at ease can be found in [benchmarking.py](./frugal_flows/benchmarking.py)
+
+# Reproduce paper experiments
+
+* To reproduce Table 1: [Continous_Frugal_Flows.ipynb](./validation/Continous_Frugal_Flows.ipynb)
+* To reproduce Figure 3: [Lalonde_Data_Pipeline.ipynb](./validation/Lalonde_Data_Pipeline.ipynb)
+* To reproduce Figure 4: [e401k_Data_Pipeline.ipynb](./validation/e401k_Data_Pipeline.ipynb)
+* To reproduce Table 3 in the Appendix: [Logistic_Sampling.ipynb](./validation/Logistic_Sampling.ipynb)
+
+## To reproduce comparisons to Causal Flows
+
+To recover Causal Flows ATE values reported in Table 1:
+* Clone our [forked causal-flow repository](https://github.com/llaurabatt/causal-flows.git)
+* Build your environment from the ```environment.yaml``` file
+* Run ```run.sh``` to reproduce experiments
+* Run ```ate_FF_loop.ipynb``` to produce ATE values
+
+# Acknowledgement
+
+This repository is developed mainly based on the [FlowJAX](https://github.com/danielward27/flowjax/tree/main) repository. Many thanks to its contributors!

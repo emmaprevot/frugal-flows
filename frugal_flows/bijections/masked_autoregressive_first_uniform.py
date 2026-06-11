@@ -84,6 +84,10 @@ class MaskedAutoregressiveFirstUniform(AbstractBijection):
         if cond_dim_mask is None:
             if cond_dim_nomask is None:
                 self.cond_shape = None
+                # currently in_ranks = jnp.arange(dim) gives all coordinates distinct ranks — 
+                # coordinates 0..K-1 (the R's) should act as conditioning inputs to the V_Z transforms, not as outputs.
+                # One option: give them rank -1 (like unmasked conditioning), meaning every V_Z output can depend on all R's. 
+                # The masking logic in __init__ needs that split.
                 in_ranks = jnp.arange(dim)
             else:
                 self.cond_shape = (cond_dim_nomask,)
@@ -145,11 +149,22 @@ class MaskedAutoregressiveFirstUniform(AbstractBijection):
         log_det = self.transform_and_log_det(x, condition)[1]
         return x, -log_det
 
+    # Currently _flat_params_to_transformer hardcodes cond_u_y_dim=1
+    # For Architecture B the NSF must keep the first K coordinates fixed (pass R through as identity) and only transform coordinates K onward (V_Z). 
+    # Change cond_u_y_dim=1 to a constructor argument n_fixed: int = 1:
+    # __init__: store self.n_fixed = n_fixed
+    # def _flat_params_to_transformer(self, params):
+    #      [...]
+    #      transformer_params = transformer_params[self.n_fixed:, :]
+    #      return Concatenate(
+    #           [Identity((self.n_fixed,)), Vmap(transformer, in_axes=eqx.if_array(0))]
+    #            )
+
     def _flat_params_to_transformer(self, params: Array, cond_u_y_dim=1):
         """Reshape to dim X params_per_dim, then vmap."""
         dim = self.shape[-1]
         transformer_params = jnp.reshape(params, (dim, -1))
-        transformer_params = transformer_params[cond_u_y_dim:, :]
+        transformer_params = transformer_params[cond_u_y_dim:, :]  # skips coord 0 only
         transformer = eqx.filter_vmap(self.transformer_constructor)(transformer_params)
         return Concatenate(
             [Identity((cond_u_y_dim,)), Vmap(transformer, in_axes=eqx.if_array(0))]

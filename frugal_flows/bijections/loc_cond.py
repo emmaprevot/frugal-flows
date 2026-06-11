@@ -54,6 +54,14 @@ class LocCond(AbstractBijection):
         self.shape = self.ate.shape
         self.cond_shape = (cond_dim,)
 
+    # Currently ate is a scalar (shape ()). 
+    # For Architecture B's location-translation option, tau is a vector (K,). 
+    # The transform becomes elementwise:
+    # # Architecture B (vector)
+    # def transform(self, x, condition=None):
+    #     return x + self.tau * condition[0]   # broadcasts over K dims
+    # 
+    # self.shape becomes (K,). Everything else is the same. 
     def transform_and_log_det(self, x, condition=None):
         return x + self.ate * condition[0], jnp.zeros(())
 
