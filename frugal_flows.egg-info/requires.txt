@@ -1,5 +1,0 @@
-jax
-flowjax
-equinox>=0.10
-tqdm
-optax
