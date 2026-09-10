@@ -1,0 +1,65 @@
+# E4 -- COPULA capacity sweep at K=256.
+#
+
+
+program: sweep_agent.py
+method: grid
+metric:
+  name: ate_mae
+  goal: minimize
+
+parameters:
+  preset:
+    value: exp4_covariate_cate
+  arm:
+    value: flexible_continuous
+  conditioner:
+    value: mlp
+  size:
+    value: 16
+
+  # --- MARGIN: pinned at E4's previous best ---
+  learning_rate:
+    value: 0.003
+  flow_layers:
+    value: 4
+  nn_width:
+    value: 96
+  rqs_knots:
+    value: 8
+
+  # --- COPULA: the actual search. Biased upward, since the library default
+  # (50 x 4 x 1) is the low corner and the K=16 probe favoured bigger.
+  #
+  # Width is spaced GEOMETRICALLY (48 -> 96 -> 192, each x2) rather than as two
+  # far-apart points: on an axis nobody has explored, the question is the order
+  # of magnitude, and three log-spaced points show a trend where two cannot. 48
+  # and 96 also match the margin widths already swept, so the two sub-models are
+  # on a comparable scale.
+  #
+  # Depth is pinned at 1 to pay for that resolution. Width and layer count are
+  # the usual first-order capacity knobs; depth is second-order and worth a
+  # follow-up pass only if width and layers alone do not close the gap. ---
+  copula_nn_width:
+    values: [48, 96]
+  copula_flow_layers:
+    values: [4, 8, 12]
+  copula_nn_depth:
+    value: 1
+  copula_rqs_knots:
+    value: 8
+
+  max_epochs:
+    value: 50
+  max_patience:
+    value: 50
+  n_mc:
+    value: 1000
+
+  seed:
+    value: 101
+
+  wandb_group:
+    value: tuning-e4-copula-k256
+  wandb_tags:
+    value: tuning,k256,grid,copula,e4

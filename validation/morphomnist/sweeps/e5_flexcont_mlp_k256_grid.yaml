@@ -1,0 +1,66 @@
+# E1 (RCT, homogeneous) -- flexible_continuous / mlp at K=256, truncated grid.
+#
+# WHY E1 IS WORTH TUNING ON. It is an RCT with a homogeneous effect, so there is
+# no confounding to undo and no heterogeneity to represent. Every baseline lands
+# on the same number (naive = IPW = OLS = AIPW = oracle = 0.0114 at K=256,
+# seeds 101-103). Any gap the flow shows here is therefore PURE ESTIMATION
+# INEFFICIENCY in modelling a 256-dimensional outcome -- it isolates the flow's
+# density-modelling cost from the causal problem entirely.
+#
+# Target: ate_mae ~ 0.0114. Anything materially above that is the flow's own
+# overhead, not a causal failure.
+#
+# 4 x 2 x 2 x 2 = 32 cells, ~11 min each at 50 epochs / n_mc=1000 -> ~6 h.
+# The grid terminates on its own; --count only needed to run it in chunks.
+#
+#   wandb sweep --entity proj-lb --project "Frugal Images" \
+#       sweeps/e1_flexcont_mlp_k256_grid.yaml
+#   wandb agent proj-lb/<project-slug>/<sweep-id>
+#
+# TUNING ONLY: ate_mae is computed from ground truth. Seed 101 must stay
+# disjoint from the reporting seeds (1-5).
+
+program: sweep_agent.py
+method: grid
+metric:
+  name: ate_mae
+  goal: minimize
+
+parameters:
+  preset:
+    value: exp5_quantile_effect
+  arm:
+    value: flexible_continuous
+  conditioner:
+    value: mlp
+  size:
+    value: 16
+
+  # Same grid as the E4 sweep, so the two are directly comparable.
+  # NOTE: E1's true tau(u) is exactly FLAT, so rqs_knots should matter less here
+  # than on E4/E5 -- if the higher knot count wins anyway, that is spline
+  # capacity being spent on curvature the data does not contain.
+  learning_rate:
+    values: [0.0001, 0.001, 0.003, 0.01, 0.03]
+  flow_layers:
+    values: [4, 8]
+  nn_width:
+    values: [48, 96]
+  rqs_knots:
+    values: [8, 12]
+
+  max_epochs:
+    value: 50
+  max_patience:
+    value: 50
+  n_mc:
+    value: 1000
+
+  # Fixed during the search so every cell sees identical data and init.
+  seed:
+    value: 101
+
+  wandb_group:
+    value: tuning-e1-flexcont-k256
+  wandb_tags:
+    value: tuning,k256,grid,scan,e1,flexcont

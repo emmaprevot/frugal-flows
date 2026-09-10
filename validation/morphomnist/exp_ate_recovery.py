@@ -418,12 +418,22 @@ class Config:
     conditioner: str = "mlp"   # flexible_continuous margin engine
     nn_heads: int = 4          # transformer conditioner only; must divide nn_width
     ate_init: float = 0.5      # location_translation only
+    # ---- capacity of the CAUSAL MARGIN: p(Y | do(T)), which carries the effect ----
     rqs_knots: int = 8
     nn_depth: int = 1
     nn_width: int = 48   # divisible by nn_heads, so --sweep compares the mlp and
                          # transformer conditioners at IDENTICAL capacity and the
                          # transformer cells need no special-casing
     flow_layers: int = 4
+    # ---- capacity of the COPULA: links U_Y to U_Z, i.e. does the covariate
+    # adjustment. A SEPARATE sub-model from the margin above, and the one that
+    # matters under confounding. Defaults reproduce train_frugal_flow's own
+    # defaults exactly, so runs are unchanged -- but they are now recorded in
+    # config.json and can be swept. ----
+    copula_rqs_knots: int = 8
+    copula_nn_depth: int = 1
+    copula_nn_width: int = 50
+    copula_flow_layers: int = 4
     learning_rate: float = 1e-2
     max_epochs: int = 100
     max_patience: int = 30
@@ -620,6 +630,11 @@ def fit_flow(cfg: Config, data: dict, timings: dict | None = None):
 
     key, subkey = jr.split(key)
     _t = time.monotonic()
+    # The top-level capacity arguments size the COPULA (the U_Y <-> U_Z model,
+    # i.e. the covariate adjustment); causal_model_args sizes the MARGIN. These
+    # were previously left at library defaults and so were neither swept nor
+    # recorded -- which matters under confounding, where the copula is what
+    # separates the treatment effect from the outcome's dependence on Z.
     flow, losses = train_frugal_flow(
         causal_model=cfg.arm,
         key=subkey,
@@ -630,6 +645,10 @@ def fit_flow(cfg: Config, data: dict, timings: dict | None = None):
         max_epochs=cfg.max_epochs,
         max_patience=cfg.max_patience,
         batch_size=cfg.batch_size,
+        RQS_knots=cfg.copula_rqs_knots,
+        nn_depth=cfg.copula_nn_depth,
+        nn_width=cfg.copula_nn_width,
+        flow_layers=cfg.copula_flow_layers,
         causal_model_args=causal_model_args,
     )
     if timings is not None:

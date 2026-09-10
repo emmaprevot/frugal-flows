@@ -1,0 +1,74 @@
+# Phase 1 (grid): truncated hyperparameter search for flexible_continuous / mlp
+# at K=256 (size 16), on exp4_covariate_cate.
+#
+# EXHAUSTIVE: 4 x 2 x 2 x 2 = 32 runs. The agent stops on its own when the grid
+# is done, so --count is optional (use it only to run the grid in chunks).
+#
+# WHY A GRID RATHER THAN BAYES. With only four axes at ~11 min a trial, adaptive
+# search buys little: 32 cells costs the same wall-clock as 30 Bayesian samples,
+# and "we searched a 4x2x2x2 grid" is exactly reproducible and trivial to defend,
+# whereas "Bayesian search with 30 trials" invites "why 30?". Bayes earns its
+# keep on large spaces or cheap trials; neither applies here.
+#
+# WHY TRUNCATED. Measured at K=256: 8.47 s/epoch, ~97 s read-out at n_mc=500.
+# A full 200-epoch run is ~35-45 min, so a 32-cell grid at full budget would be
+# ~20 h. At 50 epochs / n_mc=1000 it is ~11 min a cell, ~6 h total. This buys a
+# RANKING; confirm the finalists at full budget afterwards.
+#
+#   wandb sweep --entity proj-lb --project "Frugal Images" \
+#       sweeps/flexcont_mlp_k256_grid.yaml
+#   wandb agent proj-lb/<project-slug>/<sweep-id>
+#
+# TUNING ONLY: ate_mae is computed from ground truth. Seed 101 here must stay
+# disjoint from the reporting seeds (1-5).
+
+program: sweep_agent.py
+method: grid
+metric:
+  name: ate_mae
+  goal: minimize
+
+parameters:
+  # --- fixed: what we are tuning ON ---
+  preset:
+    value: exp4_covariate_cate
+  arm:
+    value: flexible_continuous
+  conditioner:
+    value: mlp
+  size:
+    value: 16
+
+  # --- the grid: 4 x 2 x 2 x 2 = 32 cells ---
+  # Learning rate is discretised (grid mode cannot take a continuous
+  # `distribution`). These four span the range that mattered at K=64: the
+  # transformer diverged at 1e-2 while location_translation under-trained at
+  # 5e-3, so the useful region is wide and roughly log-spaced.
+  learning_rate:
+    values: [0.001, 0.003, 0.01, 0.03]
+  flow_layers:
+    values: [4, 8]
+  nn_width:
+    values: [48, 96]
+  rqs_knots:
+    values: [8, 12]
+
+  # --- truncated budget (see header) ---
+  max_epochs:
+    value: 50
+  max_patience:
+    value: 50
+  n_mc:
+    value: 1000
+
+  # --- fixed during the search: `seed` drives both seed_data and seed_fit.
+  # Held constant so every cell is compared on identical data and initialisation
+  # -- a varying seed would confound the grid. Replicate across seeds when
+  # confirming the finalists instead. ---
+  seed:
+    value: 101
+
+  wandb_group:
+    value: tuning-mlp-k256-grid
+  wandb_tags:
+    value: tuning,k256,grid,scan

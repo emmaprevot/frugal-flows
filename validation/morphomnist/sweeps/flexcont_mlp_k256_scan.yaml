@@ -1,0 +1,68 @@
+# Phase 1: truncated scan for flexible_continuous / mlp at K=256 (size 16).
+#
+# WHY TRUNCATED. Measured at K=256: 8.47 s/epoch and ~97 s for the read-out at
+# n_mc=500, so a full 200-epoch run is ~35-45 min. Scanning at full budget would
+# take days. This config runs 50 epochs at n_mc=1000 (~10-11 min/trial), which
+# buys a ranking cheaply; the finalists are then confirmed at full budget by
+# hand. Do NOT quote numbers from this sweep -- 50 epochs is not converged.
+#
+# WHY NO EARLY TERMINATION. Hyperband would have to prune on val_loss, the only
+# metric logged per epoch, and val_loss has been shown to rank ATE recovery
+# badly here. The mlp also does not diverge the way the transformer does, so
+# there is little to prune. Trials are capped with `wandb agent --count` instead.
+#
+#   wandb sweep --entity proj-lb --project "Frugal Images" \
+#       sweeps/flexcont_mlp_k256_scan.yaml
+#   wandb agent --count 30 proj-lb/<project-slug>/<sweep-id>
+#
+# TUNING ONLY: ate_mae is computed from ground truth. Seeds 101+ here must stay
+# disjoint from the reporting seeds (1-5).
+
+program: sweep_agent.py
+method: bayes
+metric:
+  name: ate_mae
+  goal: minimize
+
+parameters:
+  # --- fixed: what we are tuning ON ---
+  preset:
+    value: exp4_covariate_cate
+  arm:
+    value: flexible_continuous
+  conditioner:
+    value: mlp
+  size:
+    value: 16
+
+  # --- the search space ---
+  learning_rate:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 0.03
+  flow_layers:
+    values: [4, 8]
+  nn_width:
+    values: [48, 96]
+  rqs_knots:
+    values: [8, 12]
+
+  # --- truncated budget (see header) ---
+  max_epochs:
+    value: 50
+  max_patience:
+    value: 50
+  n_mc:
+    value: 1000
+
+  # --- fixed during the search: `seed` drives both seed_data and seed_fit.
+  # Held constant on purpose -- under `method: bayes` a varying seed becomes a
+  # dimension the optimiser can exploit, so the winner would be partly a lucky
+  # draw. Replicate across seeds when confirming the finalists instead. ---
+  seed:
+    value: 101
+
+  wandb_group:
+    value: tuning-mlp-k256
+  wandb_tags:
+    value: tuning,k256,scan

@@ -1,0 +1,90 @@
+# E2 -- COPULA capacity sweep at K=256.
+#
+# WHY THIS EXISTS. The frugal flow has two independently-sized sub-models:
+#
+#   causal margin  p(Y | do(T))     carries the effect      <- causal_model_args
+#   copula         U_Y  <->  U_Z    does the ADJUSTMENT     <- top-level args
+#
+# Every previous sweep varied only the margin; the copula sat at library
+# defaults (nn_width=50, flow_layers=4, nn_depth=1, RQS_knots=8) and was not even
+# recorded in config.json. That fits the observed failure exactly: E1 (an RCT,
+# where the copula barely matters for the ATE) reached 0.0225, while E2 -- same
+# effect, only confounding added -- stalled at 0.0888 against a 0.0137 baseline.
+# The copula is what separates the treatment effect from the outcome's dependence
+# on Z, so under confounding it is the binding constraint.
+#
+# Early evidence: at K=16 / 6 epochs, widening the copula from 50x4 to 128x8
+# moved ate_mae 0.1682 -> 0.1184 (-30%). Note the validation loss got WORSE
+# (4.27 -> 5.67) -- do not select on it.
+#
+# The MARGIN is pinned at E2's best from the previous sweep (lr 0.003,
+# flow_layers 8, nn_width 96, rqs_knots 8) so the only thing moving is the copula.
+#
+# 2 x 3 x 2 = 12 cells. A larger copula costs more per epoch than the ~11 min
+# baseline, so budget ~4-5 h.
+#
+#   wandb sweep --entity proj-lb --project "Frugal Images" \
+#       sweeps/e2_copula_capacity_k256.yaml
+#   wandb agent proj-lb/<project-slug>/<sweep-id>
+
+program: sweep_agent.py
+method: grid
+metric:
+  name: ate_mae
+  goal: minimize
+
+parameters:
+  preset:
+    value: exp2_confounded_homogeneous
+  arm:
+    value: flexible_continuous
+  conditioner:
+    value: mlp
+  size:
+    value: 16
+
+  # --- MARGIN: pinned at E2's previous best ---
+  learning_rate:
+    value: 0.003
+  flow_layers:
+    value: 8
+  nn_width:
+    value: 96
+  rqs_knots:
+    value: 8
+
+  # --- COPULA: the actual search. Biased upward, since the library default
+  # (50 x 4 x 1) is the low corner and the K=16 probe favoured bigger.
+  #
+  # Width is spaced GEOMETRICALLY (48 -> 96 -> 192, each x2) rather than as two
+  # far-apart points: on an axis nobody has explored, the question is the order
+  # of magnitude, and three log-spaced points show a trend where two cannot. 48
+  # and 96 also match the margin widths already swept, so the two sub-models are
+  # on a comparable scale.
+  #
+  # Depth is pinned at 1 to pay for that resolution. Width and layer count are
+  # the usual first-order capacity knobs; depth is second-order and worth a
+  # follow-up pass only if width and layers alone do not close the gap. ---
+  copula_nn_width:
+    values: [48, 96]
+  copula_flow_layers:
+    values: [4, 8, 12]
+  copula_nn_depth:
+    value: 1
+  copula_rqs_knots:
+    value: 8
+
+  max_epochs:
+    value: 50
+  max_patience:
+    value: 50
+  n_mc:
+    value: 1000
+
+  seed:
+    value: 101
+
+  wandb_group:
+    value: tuning-e2-copula-k256
+  wandb_tags:
+    value: tuning,k256,grid,copula,e2
